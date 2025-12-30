@@ -1,0 +1,21 @@
+# Lightweight Dockerfile for pre-built binaries
+# Ideal for air-gapped/offline machines where building from source is impossible.
+
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+# The binary should be built for linux/amd64 (or arm64) using:
+# CGO_ENABLED=0 go build -o ssh-ca ./cmd/server
+COPY ssh-ca .
+COPY web/static ./web/static
+COPY web/templates ./web/templates
+
+# Ensure binary is executable
+RUN chmod +x /app/ssh-ca
+
+EXPOSE 8080
+
+ENTRYPOINT ["./ssh-ca"]

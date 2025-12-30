@@ -1,0 +1,15 @@
+services:
+  ssh-ca:
+    build: ../..
+    image: ssh-ca:latest
+    container_name: ssh-ca-standalone
+    ports:
+      - "8080:8080"
+    environment:
+      - CA_MODE=online
+      - BIND_ADDR=:8080
+      - KEY_PATH=/data/keys
+      - DB_PATH=/data/ssh-ca.db
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

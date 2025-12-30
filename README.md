@@ -55,23 +55,53 @@ graph TB
 - **Host & User Keys**: Supports both user authentication and host verification.
 - **Audit Friendly**: Tracks certificate issuance (locally).
 
-## 🚀 Getting Started
+## 🚀 Deployment Tiers
 
-The server listens on `:8080`.
+Choose the security tier that matches your homelab's risk profile.
 
-### 3. Running with Docker (Recommended)
-
-#### Option A: Simple Standalone
+### 🛡️ Tier 1: Online CA (Max Convenience)
+Everything runs in a single container. Good for internal-only labs.
 ```bash
-docker compose up -d
+docker compose -f deploy/tier-1-online/docker-compose.yml up -d
 ```
 
-#### Option B: Offline Root + Online Intermediate
-This starts two instances: one for the root CA (port 8081) and one for the intermediate (port 8080).
+### ❄️ Tier 2: Cold-Storage Root (Host Backed)
+Two containers on one host. The Root CA remains stopped except during intermediate renewal. Root keys live on the server's SSD.
 ```bash
-docker compose -f docker-compose.offline.yml up -d
+docker compose -f deploy/tier-2-shared-host/docker-compose.yml up -d
 ```
+
+### 🔌 Tier 2+: Removable Root (USB Backed)
+Same as Tier 2, but the Root keys live on a **removable USB drive**. High protection against host-level storage compromise.
+```bash
+# Set ROOT_DATA_DIR to your USB mount point
+export ROOT_DATA_DIR=/mnt/usb_ca/root-ca-data
+docker compose -f deploy/tier-2-shared-host/docker-compose.yml up root-ca
+```
+
+### 🏔️ Tier 3: Isolated Root (Max Security)
+The Root CA runs on a dedicated offline machine. CSRs and Certificates are moved via encrypted USB.
+- **Offline Machine**: `deploy/tier-3-isolated/docker-compose.root.yml`
+- **Online Machine**: `deploy/tier-3-isolated/docker-compose.intermediate.yml`
+
 Refer to the [Offline Root Setup Workflow](.agent/workflows/offline-root-setup.md) for detailed configuration steps.
+
+## 🛡️ Threat Mitigation Matrix
+
+| Threat Category | Tier 1 | Tier 2 | Tier 2+ | Tier 3 | **+ Hardware Add-on** |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Daemon Software Bug** | ❌ Risk | ✅ Mitigated¹ | ✅ Mitigated¹ | ✅ Mitigated¹ | ❌ No change |
+| **Host Root Compromise**| ❌ Full Loss | ❌ Loss | ⚠️ Partial² | ✅ Full | ✅ **Key safe** |
+| **Key Exfiltration**    | ❌ Easy | ❌ Easy | ⚠️ If plugged in| ✅ Impossible | ✅ **Non-extractable** |
+| **Session Hijacking**   | ❌ Risk | ✅ Mitigated³ | ✅ Mitigated³ | ✅ Mitigated³ | ⚠️ Touch required |
+| **Physical Theft**      | ❌ Risk | ❌ Risk | ✅ Root on USB | ⚠️ Laptop theft | ✅ PIN required |
+
+*¹ Root CA is stopped; bugs in the online intermediate cannot touch the root process.*  
+*² If the host is compromised while the USB is unplugged, the Root identity remains safe.*  
+*³ Even if an attacker hijacks the online server, they cannot reach the offline root process (stopped).*
+
+### 🔑 Security Add-on: Hardware Keys (YubiKey/FIDO2)
+Hardware keys can be added to **any tier** to ensure your CA private keys are **non-extractable**. Even if an attacker achieves full root access to your server, they cannot copy the private keys to another machine. Hardware keys transition your security from "Software-based" to "Signature-request based" (requiring a physical tap to sign).
 
 ### 4. First Login
 

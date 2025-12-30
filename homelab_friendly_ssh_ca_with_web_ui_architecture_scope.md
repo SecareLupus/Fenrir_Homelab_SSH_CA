@@ -119,23 +119,51 @@ All components may live in a single process for v1.
 
 ---
 
-## 4. CA Key Management
+## 4. CA Security Tiers
 
-### Mode A: Online CA (Allowed, Possibly Default)
+### Tier 1: Online CA (Homelab Default)
+- **Deployment**: Single container.
+- **Key Management**: Both User and Host CA keys live on the active server.
+- **Security**: Keys are encrypted at rest with a passphrase provided via environment variable. 
+- **Use Case**: Maximum convenience for low-trust/internal-only homelabs.
 
-- CA private key encrypted at rest
-- Passphrase provided via env/secret/file
-- Clearly documented as "homelab mode"
+### Tier 2: Cold-Storage Root (Host Backed)
+- **Deployment**: Two containers on the same host (`root-ca` and `intermediate-ca`).
+- **Key Management**: 
+    - `intermediate-ca` is online and performs daily signing.
+    - `root-ca` is **stopped** 99% of the time.
+- **Security**: Protects against software bugs in the online daemon, but remains vulnerable to host-level compromise (host root can read stopped container volumes).
+- **Use Case**: Basic security for users with a single server.
 
-### Mode B: Offline Root + Online Intermediate (Recommended)
+### Tier 2+: Removable Root (USB Backed)
+- **Deployment**: Same as Tier 2, but the Root volumes are mapped to a physical USB drive.
+- **Key Management**: 
+    - Root keys are stored on an **externally mounted USB drive** (ideally encrypted).
+    - The USB is **unplugged** when the Root CA is not in use.
+- **Security**: Provides "Poor Man's Air-Gap". Even if the host is compromised, the Root identity is safe if the USB is physically removed.
+- **Use Case**: Balanced high-security for single-server homelabs.
 
-- Root signs intermediate once
-- Service holds only intermediate key
-- Supports rotation without re-trusting hosts
-
-Both modes share the same API and UI.
+### Tier 3: Isolated Root (Air-Gapped)
+- **Deployment**: `root-ca` runs on a dedicated, offline machine (e.g., an old laptop or RPi). `intermediate-ca` runs on the online server.
+- **Key Management**: Root keys never touch a networked machine. 
+- **Transfer**: CSRs and Certificates are moved via encrypted USB.
+- **Security**: Maximum protection. Compromise of the online host allows revocation of the intermediate without risking the Root identity.
+- **Use Case**: Production-grade or high-security personal infrastructures.
 
 ---
+
+## 5. Security Extension: Hardware-Backed Keys
+
+For users requiring tamper-proof key storage, the CA architecture supports (or will support) hardware integration across all tiers:
+
+- **Non-Extractability**: CA private keys are generated inside a YubiKey or HSM and cannot be read by the host OS.
+- **Physical Authorization**: Signing operations can be configured to require a physical "touch" on the security key, preventing automated/silent signature hijacks.
+- **Support Paths**:
+    - **YubiKey / HSM**: Integration via PKCS#11 for standard PIV slots.
+    - **FIDO2**: Support for residential keys (requires custom `ssh.Signer` implementation).
+    - **TPM**: Sealing software keys to the host's Trusted Platform Module.
+
+By treating Hardware Keys as an **extension**, a user can run a **Tier 1 + YubiKey** setup (high convenience, key cannot be stolen) or a **Tier 3 + YubiKey** setup (the "Max Security" configuration).
 
 ## 5. Distribution Endpoints
 

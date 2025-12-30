@@ -1,7 +1,9 @@
+# To be run on the ONLINE server.
 services:
-  ssh-ca:
-    build: .
-    container_name: ssh-ca-standalone
+  intermediate-ca:
+    build: ../..
+    image: ssh-ca:latest
+    container_name: ssh-ca-online
     ports:
       - "8080:8080"
     environment:
@@ -10,5 +12,5 @@ services:
       - KEY_PATH=/data/keys
       - DB_PATH=/data/ssh-ca.db
     volumes:
-      - ./data:/data
+      - ./online-data:/data
     restart: unless-stopped

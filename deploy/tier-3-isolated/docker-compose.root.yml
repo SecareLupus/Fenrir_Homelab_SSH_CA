@@ -1,0 +1,22 @@
+# To be run on an ISOLATED/OFFLINE host.
+# Build the binary first on an online machine:
+# CGO_ENABLED=0 go build -o ssh-ca ./cmd/server
+# Then move the binary and Dockerfile.binary to the offline host.
+
+services:
+  root-ca:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.binary
+    image: ssh-ca-binary:latest
+    container_name: ssh-ca-root
+    ports:
+      - "8080:8080"
+    environment:
+      - CA_MODE=offline
+      - BIND_ADDR=:8080
+      - KEY_PATH=/data/keys
+      - DB_PATH=/data/ssh-ca.db
+    volumes:
+      - ./root-ca-data:/data
+    restart: "no"

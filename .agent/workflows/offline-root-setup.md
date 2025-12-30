@@ -6,24 +6,41 @@ description: How to set up an offline root CA with an online intermediate
 
 This workflow allows you to maintain a high-security "offline" root CA that signs intermediate certificates for your "online" CA. Target hosts trust the Root CA, allowing you to rotate the Intermediate CA without touching the hosts.
 
-## Phase 1: Initialize Offline Root
-
-1. Create a dedicated directory for the offline root.
+1. Choose your deployment environment (Isolated Machine or Shared Host).
 2. Start the SSH CA in `offline` mode.
 
-// turbo
+### Option A: Standard Manual Start
 ```bash
 # Run this on your high-security/offline machine
 export CA_MODE=offline
 export KEY_PATH=./root-ca-keys
 export DB_PATH=./root-ca.db
 export BIND_ADDR=:8081
-# Build and run (or use existing binary)
+# Build and run
 go build -o ssh-ca ./cmd/server
 ./ssh-ca
 ```
 
-3. Log in to the UI at `http://localhost:8081`.
+### Option B: Tier 2 Cold-Storage (Shared Host - SSD)
+Run the root CA in a stopped container on the same server, with keys stored on the main SSD.
+```bash
+# Just run the root container
+docker compose -f deploy/tier-2-shared-host/docker-compose.yml up root-ca
+```
+
+### Option C: Tier 2+ Removable Storage (Shared Host - USB)
+Initialize your keys on a physical USB drive to keep them off the server's SSD:
+```bash
+# Create mount point
+sudo mkdir -p /mnt/usb_ca
+# Mount your (ideally encrypted) USB drive
+sudo mount /dev/sdX1 /mnt/usb_ca
+# Run the Root CA once to generate keys to the USB
+export ROOT_DATA_DIR=/mnt/usb_ca/root-ca-data
+docker compose -f deploy/tier-2-shared-host/docker-compose.yml up root-ca
+```
+
+3. Log in to the UI at `http://localhost:8081` (or your chosen port).
 4. The first login will bootstrap the `admin` user.
 5. Note the **Root User CA Public Key** and **Root Host CA Public Key** from the dashboard. These are what your "Fleet Devices" will trust.
 
@@ -82,15 +99,14 @@ If your online intermediate server is compromised, use this process to invalidat
 Instead of wiping the entire volume, you only rotate the CA keys:
 
 ```bash
-# 1. Stop the online service
-docker compose -f docker-compose.offline.yml stop intermediate-ca
+# Example for Tier 2: Shared Host
+docker compose -f deploy/tier-2-shared-host/docker-compose.yml stop intermediate-ca
 
-# 2. Delete ONLY the compromised keys (keep the ssh-ca.db!)
-# (Assuming your volumes are in ./online-ca-data-v1)
-rm ./online-ca-data-v1/keys/*
+# Delete ONLY the compromised keys
+rm ./deploy/tier-2-shared-host/online-ca-data/keys/*
 
-# 3. Start the service
-docker compose -f docker-compose.offline.yml start intermediate-ca
+# Start the service
+docker compose -f deploy/tier-2-shared-host/docker-compose.yml start intermediate-ca
 ```
 On startup, the CA will generate fresh keys. Follow Phase 3 & 4 again to have the root sign these new keys.
 
