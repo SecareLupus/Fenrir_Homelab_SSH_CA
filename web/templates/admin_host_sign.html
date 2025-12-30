@@ -1,0 +1,31 @@
+{{define "content"}}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h2 style="margin: 0;">Sign Host Certificate</h2>
+        <a href="/" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Dashboard</a>
+    </div>
+
+    <p style="color: var(--text-muted); margin-bottom: 2rem;">
+        Use this to sign the public key of a server (usually <code>/etc/ssh/ssh_host_ed25519_key.pub</code>).
+        This allows clients to trust the server without seeing the "identity unknown" prompt.
+    </p>
+
+    <form action="/admin/hosts/sign" method="POST">
+        <label for="hostname">Primary Hostname (Principals)</label>
+        <input type="text" id="hostname" name="hostname" placeholder="server.homelab.local" required>
+
+        <label for="pubkey">Host Public Key</label>
+        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
+            required></textarea>
+
+        <label for="ttl">Validity</label>
+        <select id="ttl" name="ttl">
+            <option value="31536000">1 Year (Standard)</option>
+            <option value="63072000">2 Years</option>
+            <option value="86400">24 Hours (Test)</option>
+        </select>
+
+        <button type="submit" style="margin-top: 1rem;">Sign Host Key</button>
+    </form>
+</div>
+{{end}}

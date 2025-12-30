@@ -1,0 +1,63 @@
+{{define "content"}}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h2 style="margin: 0;">Offline Root Setup</h2>
+        <a href="/" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Dashboard</a>
+    </div>
+
+    <p>This instance is running in <strong>OFFLINE ROOT</strong> mode. Use this tool to sign an intermediate CA
+        certificate for your online instance.</p>
+
+    <div
+        style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 1rem; margin-bottom: 2rem;">
+        <p style="margin: 0; font-size: 0.9rem;"><strong>Security Note:</strong> After signing the intermediate
+            certificates, you should save them and then <strong>shut down</strong> this machine or service until you
+            need to rotate the intermediate keys.</p>
+    </div>
+
+    <form action="/admin/offline/sign" method="POST">
+        <label for="type">Intermediate Type</label>
+        <select id="type" name="type"
+            style="width: 100%; padding: 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 1rem;">
+            <option value="user">User CA Intermediate</option>
+            <option value="host">Host CA Intermediate</option>
+        </select>
+
+        <label for="pubkey">Intermediate CSR (Public Key)</label>
+        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3..."></textarea>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">Paste the <code>user_ca.pub</code>
+            or <code>host_ca.pub</code> from your online instance.</p>
+
+        <label for="ttl">Validity (Seconds)</label>
+        <input type="number" id="ttl" name="ttl" value="31536000">
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">Default is 1 year (31,536,000
+            seconds).</p>
+
+        <button type="submit">Sign Intermediate Certificate</button>
+    </form>
+</div>
+
+<div class="card" style="border-color: #f44336;">
+    <h2 style="color: #f44336;">Revocation (Kill Switch)</h2>
+    <p>Use this to revoke a compromised online intermediate. This will add the intermediate's public key to the Root
+        KRL.</p>
+    <form action="/admin/revoke" method="POST">
+        <label for="fingerprint">Intermediate Public Key (or Fingerprint)</label>
+        <textarea id="fingerprint" name="fingerprint" rows="2" placeholder="ssh-ed25519 AAAAC3..."></textarea>
+        <input type="hidden" name="reason" value="INTERMEDIATE_COMPROMISE">
+        <button type="submit" style="background: #f44336; margin-top: 1rem;">Revoke Intermediate</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Root CA Keys (Fleet Trust)</h2>
+    <p style="color: var(--text-muted)">Flash your target hosts (sshd_config) and clients with these ROOT keys. They
+        will then trust any intermediate you sign here.</p>
+
+    <label>Root User CA Public Key</label>
+    <input type="text" readonly value="{{.UserCAKey}}" onclick="this.select()">
+
+    <label>Root Host CA Public Key</label>
+    <input type="text" readonly value="{{.HostCAKey}}" onclick="this.select()">
+</div>
+{{end}}

@@ -1,0 +1,80 @@
+{{define "content"}}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h2 style="margin: 0;">User Management</h2>
+        <div>
+            <a href="/admin/audit" class="btn-secondary"
+                style="text-decoration: none; font-size: 0.9rem; margin-right: 1rem;">Audit Log</a>
+            <a href="/admin/audit/identity" class="btn-secondary"
+                style="text-decoration: none; font-size: 0.9rem; margin-right: 1rem;">Identity Audit</a>
+            <a href="/" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Dashboard</a>
+        </div>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+        <thead>
+            <tr style="text-align: left; border-bottom: 2px solid var(--border);">
+                <th style="padding: 1rem;">Username</th>
+                <th style="padding: 1rem;">Role</th>
+                <th style="padding: 1rem;">Status</th>
+                <th style="padding: 1rem; text-align: right;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Users}}
+            <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 1rem; font-weight: 500;">{{.Username}}</td>
+                <td style="padding: 1rem;"><span class="badge">{{.Role}}</span></td>
+                <td style="padding: 1rem;">
+                    {{if .Enabled}}
+                    <span style="color: #4CAF50; display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="width: 8px; height: 8px; background: #4CAF50; border-radius: 50%;"></span>
+                        Active
+                    </span>
+                    {{else}}
+                    <span style="color: #f44336; display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="width: 8px; height: 8px; background: #f44336; border-radius: 50%;"></span>
+                        Disabled
+                    </span>
+                    {{end}}
+                </td>
+                <td style="padding: 1rem; text-align: right;">
+                    {{if ne .Username "admin"}}
+                    <form action="/admin/users/toggle" method="POST" style="display: inline;">
+                        <input type="hidden" name="username" value="{{.Username}}">
+                        {{if .Enabled}}
+                        <input type="hidden" name="action" value="disable">
+                        <button type="submit"
+                            style="background: #f44336; padding: 0.4rem 0.8rem; font-size: 0.8rem;">Disable</button>
+                        {{else}}
+                        <input type="hidden" name="action" value="enable">
+                        <button type="submit"
+                            style="background: #4CAF50; padding: 0.4rem 0.8rem; font-size: 0.8rem;">Enable</button>
+                        {{end}}
+                    </form>
+                    {{else}}
+                    <span style="color: var(--text-muted); font-size: 0.8rem;">Protected</span>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+<style>
+    .badge {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    table tr:hover {
+        background: rgba(255, 255, 255, 0.02);
+    }
+</style>
+{{end}}

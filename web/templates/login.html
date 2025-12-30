@@ -1,0 +1,17 @@
+{{define "content"}}
+<div class="card" style="max-width: 400px; margin: 4rem auto;">
+    <h2 style="margin-top: 0">Login</h2>
+    <form action="/login" method="POST">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autofocus>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
+
+        <button type="submit">Sign In</button>
+    </form>
+    <p style="color: var(--text-muted); font-size: 0.9rem; text-align: center;">
+        First login will create the admin account.
+    </p>
+</div>
+{{end}}

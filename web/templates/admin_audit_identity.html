@@ -1,0 +1,69 @@
+{{define "content"}}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h2 style="margin: 0;">Identity Audit</h2>
+        <a href="/admin/users" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Back</a>
+    </div>
+
+    <p style="color: var(--text-muted)">Identify and verify all objects created during a suspected compromise period.
+    </p>
+
+    <form method="GET" style="display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 2rem;">
+        <div style="flex: 1;">
+            <label for="since">Audit Start Date/Time</label>
+            <input type="text" id="since" name="since" value="{{.Since}}" placeholder="YYYY-MM-DD HH:MM:SS">
+        </div>
+        <button type="submit" style="width: auto; margin: 0; height: 3rem;">Filter</button>
+    </form>
+
+    {{if .AuditResults}}
+    <h3>Suspicious Users</h3>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
+        <thead>
+            <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                <th style="padding: 0.5rem;">Username</th>
+                <th style="padding: 0.5rem;">Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .AuditResults.Users}}
+            <tr>
+                <td style="padding: 0.5rem;">{{.Username}}</td>
+                <td style="padding: 0.5rem; color: var(--text-muted);">{{.CreatedAt}}</td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="2" style="padding: 1rem; text-align: center; color: var(--text-muted);">No new users in
+                    this period.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+
+    <h3>Suspicious Public Keys</h3>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
+        <thead>
+            <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                <th style="padding: 0.5rem;">Owner</th>
+                <th style="padding: 0.5rem;">Fingerprint</th>
+                <th style="padding: 0.5rem;">Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .AuditResults.Keys}}
+            <tr>
+                <td style="padding: 0.5rem;">{{.Username}}</td>
+                <td style="padding: 0.5rem;"><code>{{.Fingerprint}}</code></td>
+                <td style="padding: 0.5rem; color: var(--text-muted);">{{.CreatedAt}}</td>
+            </tr>
+            {{else}}
+            <tr>
+                <td colspan="3" style="padding: 1rem; text-align: center; color: var(--text-muted);">No new keys in this
+                    period.</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{end}}
+</div>
+{{end}}

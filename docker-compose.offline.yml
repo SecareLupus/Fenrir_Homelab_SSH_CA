@@ -1,0 +1,32 @@
+services:
+  # The Offline Root service
+  # Only start this to sign/renew/revoke intermediates.
+  root-ca:
+    build: .
+    container_name: ssh-ca-root
+    ports:
+      - "8081:8080"
+    environment:
+      - CA_MODE=offline
+      - BIND_ADDR=:8080
+      - KEY_PATH=/data/keys
+      - DB_PATH=/data/ssh-ca.db
+    volumes:
+      - ${ROOT_DATA_DIR:-./root-ca-data}:/data
+    restart: "no"
+
+  # The Online Intermediate service
+  # To rotate: change INTERMEDIATE_DATA_DIR to a new path (e.g. ./online-ca-data-v2)
+  intermediate-ca:
+    build: .
+    container_name: ssh-ca-online
+    ports:
+      - "8080:8080"
+    environment:
+      - CA_MODE=online
+      - BIND_ADDR=:8080
+      - KEY_PATH=/data/keys
+      - DB_PATH=/data/ssh-ca.db
+    volumes:
+      - ${INTERMEDIATE_DATA_DIR:-./online-ca-data}:/data
+    restart: unless-stopped

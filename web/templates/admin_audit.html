@@ -1,0 +1,75 @@
+{{define "content"}}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h2 style="margin: 0;">Audit Log</h2>
+        <div>
+            <a href="/admin/users" class="btn-secondary"
+                style="text-decoration: none; font-size: 0.9rem; margin-right: 1rem;">User Management</a>
+            <a href="/" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Dashboard</a>
+        </div>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+        <thead>
+            <tr style="text-align: left; border-bottom: 2px solid var(--border);">
+                <th style="padding: 1rem;">Time</th>
+                <th style="padding: 1rem;">User</th>
+                <th style="padding: 1rem;">Event</th>
+                <th style="padding: 1rem;">Metadata</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Logs}}
+            <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 1rem; color: var(--text-muted); font-size: 0.85rem;">{{.CreatedAt}}</td>
+                <td style="padding: 1rem; font-weight: 500;">{{.Username}}</td>
+                <td style="padding: 1rem;">
+                    <span class="event-tag {{.Event}}">{{.Event}}</span>
+                </td>
+                <td style="padding: 1rem;">
+                    <code
+                        style="font-size: 0.8rem; background: var(--bg); padding: 0.2rem 0.4rem; border-radius: 4px; word-break: break-all;">{{.Metadata}}</code>
+                    {{if or (eq .Event "key_enrolled") (eq .Event "cert_renew_pop")}}
+                    <form action="/admin/revoke" method="POST" style="display: inline; margin-left: 0.5rem;">
+                        <input type="hidden" name="fingerprint" value="{{.Metadata}}">
+                        <button type="submit"
+                            style="background: transparent; color: #f44336; border: 1px solid #f44336; padding: 0.1rem 0.4rem; font-size: 0.7rem; width: auto; display: inline; margin: 0;">Revoke</button>
+                    </form>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+<style>
+    .event-tag {
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .key_enrolled {
+        background: rgba(59, 130, 246, 0.2);
+        color: #60a5fa;
+    }
+
+    .cert_renew_pop {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+    }
+
+    .user_disabled {
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+    }
+
+    .user_enabled {
+        background: rgba(52, 211, 153, 0.2);
+        color: #6ee7b7;
+    }
+</style>
+{{end}}

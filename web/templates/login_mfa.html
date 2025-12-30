@@ -1,0 +1,17 @@
+{{define "content"}}
+<div class="card" style="max-width: 400px; margin: 4rem auto;">
+    <h2 style="text-align: center;">MFA Verification</h2>
+    <p style="text-align: center; color: var(--text-muted);">Enter the 6-digit code from your authenticator app.</p>
+
+    <form action="/login/mfa" method="POST">
+        <input type="text" name="code" placeholder="000000" maxlength="6" pattern="\d{6}" required autofocus
+            style="text-align: center; font-size: 2rem; letter-spacing: 0.5rem; padding: 1rem;">
+
+        <button type="submit" style="margin-top: 1rem;">Verify</button>
+    </form>
+    <div style="text-align: center; margin-top: 1rem;">
+        <a href="/logout" style="color: var(--text-muted); text-decoration: none; font-size: 0.9rem;">Back to Password
+            Login</a>
+    </div>
+</div>
+{{end}}
