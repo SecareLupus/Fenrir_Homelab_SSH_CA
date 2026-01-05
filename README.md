@@ -41,11 +41,22 @@ graph TB
     CL -- "SSH with Cert" --> SH
 ```
 
-### Components
+### 📝 Project Terminology
 
--   **SSH CA Server**: The brain of the system. Manages auth, policy, and signing.
--   **SSH CA Client**: Cross-platform CLI (Win/Mac/Linux) for users to request and renew certificates. Includes FIDO2/Hardware key support.
--   **SSH CA Agent**: A lightweight pull-agent for target hosts to synchronize trust material (CA keys and KRLs).
+To ensure clarity across the ecosystem, we use the following standard terms:
+
+| Term | Actor | Component | Use Case |
+| :--- | :--- | :--- | :--- |
+| **CA Server** | The Authority | `ssh-ca` | The "Brain". Signs certificates and manages the KRL. |
+| **User Client** | Workstation | `ssh-ca-client` | Used by humans to get certificates to log into servers. |
+| **Host Agent** | Target Device | `ssh-ca-agent` | Used by servers to trust the CA and identify themselves. |
+| **PoP Renewal** | - | - | **Proof-of-Possession**: Renewing a certificate using a registered private key. |
+
+### 🔄 Operational Flows
+
+- **Enrollment (Initial)**: Requires a bootstrap secret (User Password or Host API Key). This associates a Public Key with an Identity (Username/Hostname) in the CA database.
+- **Trust Sync**: By default, any device can fetch the CA Public Keys and KRL. In **Hardened Mode**, this requires an API Key.
+- **Self-Healing Renewal**: Once a key is enrolled, it can be renewed via **Proof-of-Possession (PoP)**. The CA challenges the requester to sign a random nonce. If the signature is valid and the key is not distrusted, a new certificate is issued automatically. This allows workstations and servers to maintain their identities indefinitely without manual intervention.
 
 ## Features
 
@@ -53,7 +64,10 @@ graph TB
 - **Single Binary**: No complex dependencies (MongoDB, Vault, etc.). Just one executable and a SQLite file.
 - **Native SSH**: Uses `golang.org/x/crypto/ssh` for safe, standard-compliant certificate signing.
 - **Host & User Keys**: Supports both user authentication and host verification.
-- **Audit Friendly**: Tracks certificate issuance (locally).
+- **MFA & Recovery**: Mandatory TOTP for admins with secure, single-use **Backup Codes**.
+- **Passwordless Sudo**: Custom PAM module (`pam_ssh_ca`) for certificate-based sudo authentication.
+- **Hardware Security**: Infrastructure for **PKCS#11 (HSM/YubiKey)** signing to ensure non-extractable CA keys.
+- **Audit Friendly**: Detailed event logs with identity-based auditing.
 
 ## 🚀 Deployment Tiers
 
@@ -128,6 +142,24 @@ To allow users signed by this CA to log in:
     TrustedUserCAKeys /etc/ssh/user_ca.pub
     ```
 4.  Restart sshd: `sudo systemctl restart sshd`.
+### Advanced Hardening
+
+| Feature | Env Variable | Description |
+| :--- | :--- | :--- |
+| **Hardened Sync** | `CA_HARDENED_SYNC=true` | Requires API Key to pull KRL/CA Keys. |
+| **PKCS#11** | `PKCS11_MODULE` | Path to your HSM/YubiKey shared library. |
+
+### PAM Module Setup (Passwordless Sudo)
+
+To use your SSH certificate for sudo authentication:
+
+1. Install dependencies: `sudo apt install libpam0g-dev` (on Debian/Ubuntu).
+2. Build the module: `go build -buildmode=c-shared -o bin/pam_ssh_ca.so ./cmd/pam-ssh-ca`
+2. Install to `/lib/security/`.
+3. Configure `/etc/pam.d/sudo`:
+   ```bash
+   auth sufficient pam_ssh_ca.so
+   ```
 
 ## Development
 

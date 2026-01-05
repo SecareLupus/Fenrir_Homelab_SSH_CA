@@ -1,0 +1,49 @@
+{{define "content"}}
+<div class="card" style="max-width: 640px; margin: 4rem auto;">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <div style="font-size: 3.5rem; margin-bottom: 1rem;">🔑</div>
+        <h2 style="margin: 0; font-size: 1.75rem; letter-spacing: -0.02em;">Host API Key Generated</h2>
+        <p style="color: var(--text-muted); margin-top: 0.5rem;">Use this key to configure automated renewal for
+            <strong>{{.Hostname}}</strong>.</p>
+    </div>
+
+    <div
+        style="background: rgba(251, 191, 36, 0.05); border: 1px solid rgba(251, 191, 36, 0.2); padding: 2rem; border-radius: 12px; margin-bottom: 2.5rem;">
+        <h3 style="margin-top: 0; color: #fbbf24; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+            ⚠️ Save This Key
+        </h3>
+        <p style="font-size: 0.9rem; color: #94a3b8; line-height: 1.6; margin-bottom: 1.5rem;">
+            This key will <strong>never be shown again</strong>. It is required for the agent to authenticate with the
+            CA for automated certificate renewal.
+        </p>
+
+        <div
+            style="background: #0b0f1a; padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); position: relative; margin-bottom: 1rem;">
+            <code id="api-key-display"
+                style="font-family: monospace; font-size: 1.1rem; color: var(--text); word-break: break-all; display: block; padding-right: 3rem;">{{.APIKey}}</code>
+            <button onclick="copyKey()"
+                style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); background: transparent; border: none; font-size: 1.25rem; cursor: pointer; padding: 0.5rem;">📋</button>
+        </div>
+
+        <p style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">
+            Configure the agent on {{.Hostname}} using: <code>--api-key="{{.APIKey}}"</code> or
+            <code>export SSH_CA_API_KEY="{{.APIKey}}"</code>.
+        </p>
+    </div>
+
+    <div style="display: flex; gap: 1rem;">
+        <a href="/admin/hosts/sign" class="btn-secondary" style="flex: 1; justify-content: center;">Back to Hosts</a>
+        <a href="/" class="button"
+            style="flex: 1; text-align: center; background: var(--primary); color: white; padding: 1rem; border-radius: 8px; text-decoration: none; font-weight: 700; transition: var(--transition); display: flex; align-items: center; justify-content: center;">Dashboard</a>
+    </div>
+</div>
+
+<script>
+    function copyKey() {
+        const key = document.getElementById('api-key-display').innerText;
+        navigator.clipboard.writeText(key).then(() => {
+            alert('API Key copied to clipboard');
+        });
+    }
+</script>
+{{end}}

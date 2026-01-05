@@ -84,12 +84,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/admin/audit", s.handleAdminAudit)
 	s.mux.HandleFunc("/admin/audit/identity", s.handleAdminAuditIdentity)
 	s.mux.HandleFunc("/admin/hosts/sign", s.handleAdminHostSign)
+	s.mux.HandleFunc("/admin/hosts/apikey", s.handleAdminHostAPIKey)
 	s.mux.HandleFunc("/admin/revoke", s.handleAdminRevoke)
 	s.mux.HandleFunc("/admin/offline", s.handleAdminOffline)
 	s.mux.HandleFunc("/admin/offline/sign", s.handleAdminOfflineSign)
 	s.mux.HandleFunc("/krl", s.handleKRL)
 	s.mux.HandleFunc("/api/v1/ca/user", s.handleAPIUserCA)
 	s.mux.HandleFunc("/api/v1/ca/host", s.handleAPIHostCA)
+	s.mux.HandleFunc("/api/v1/host/renew", s.handleAPIHostRenew)
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
 }
 
@@ -279,10 +281,10 @@ func (s *Server) handleAdminOfflineSign(w http.ResponseWriter, r *http.Request) 
 	uid, _ := s.db.GetUserID(username)
 	s.db.LogEvent(&uid, "intermediate_cert_signed", certType)
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"intermediate-%s-cert.pub\"", certType))
-	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Write(ssh.MarshalAuthorizedKey(cert))
 }
+
 
 func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -308,6 +310,7 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 	if apiKey != "" {
 		// Enrollment path
 		hash := auth.HashAPIKey(apiKey)
+		var err error
 		username, err = s.db.GetUserByAPIKey(hash)
 		if err != nil {
 			http.Error(w, "Invalid API Key", 401)
@@ -315,7 +318,7 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		isNewKey = true
 	} else {
-		// Renewal path
+		// Renewal path via PoP
 		owner, err := s.db.CheckPublicKeyOwnership(fingerprint)
 		if err != nil {
 			http.Error(w, "Key not enrolled. API Key required for initial setup.", 401)
@@ -327,50 +330,11 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		username = owner
 
-		// Check PoP or Cert
-		sigBase64 := r.Header.Get("X-SSH-Signature")
-		challengeVal := r.Header.Get("X-SSH-Challenge")
-
-		if sigBase64 == "" {
-			// Generate Challenge
-			cBytes := make([]byte, 32)
-			rand.Read(cBytes)
-			cStr := base64.StdEncoding.EncodeToString(cBytes)
-			s.challenges[fingerprint] = challenge{val: cStr, expires: time.Now().Add(5 * time.Minute)}
-
-			w.Header().Set("X-SSH-Challenge", cStr)
-			http.Error(w, "Proof of Possession required", 401)
+		ok, _ := s.verifyPoP(w, r, pubKey)
+		if !ok {
 			return
 		}
 
-		// Verify Challenge
-		stored, ok := s.challenges[fingerprint]
-		if !ok || stored.val != challengeVal || time.Now().After(stored.expires) {
-			http.Error(w, "Invalid or expired challenge", 401)
-			return
-		}
-		delete(s.challenges, fingerprint)
-
-		sigBytes, err := base64.StdEncoding.DecodeString(sigBase64)
-		if err != nil {
-			http.Error(w, "Invalid signature format", 400)
-			return
-		}
-		var sig ssh.Signature
-		if err := ssh.Unmarshal(sigBytes, &sig); err != nil {
-			http.Error(w, "Invalid signature encoding", 400)
-			return
-		}
-
-		if err := pubKey.Verify([]byte(challengeVal), &sig); err != nil {
-			http.Error(w, "Signature verification failed", 401)
-			return
-		}
-
-		// If we got here, PoP is successful.
-		// Check if renewal is "suspicious" (expired cert used)
-		// UI/CLI should ideally send the old cert too for us to check.
-		// For MVP, we'll just log that a PoP renewal occurred.
 		uid, _ := s.db.GetUserID(username)
 		s.db.LogEvent(&uid, "cert_renew_pop", fingerprint)
 	}
@@ -564,8 +528,10 @@ func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == "GET" {
+		hosts, _ := s.db.ListHosts()
 		s.renderPage(w, "admin_host_sign.html", map[string]any{
-			"User": username,
+			"User":  username,
+			"Hosts": hosts,
 		})
 		return
 	}
@@ -580,6 +546,10 @@ func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid public key", 400)
 		return
 	}
+
+	// Register host if not exists
+	fingerprint := ssh.FingerprintSHA256(pubKey)
+	_ = s.db.RegisterHost(hostname, fingerprint)
 
 	ttl, _ := strconv.ParseUint(ttlStr, 10, 64)
 	if ttl == 0 {
@@ -597,13 +567,48 @@ func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 	uid, _ := s.db.GetUserID(username)
 	s.db.LogEvent(&uid, "host_cert_signed", hostname)
 
-	// Store in DB
-	fp := ssh.FingerprintSHA256(pubKey)
-	s.db.StoreCertificate(cert.Serial, fp, "host", strings.Join(principals, ","), int64(cert.ValidAfter), int64(cert.ValidBefore))
-
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s-cert.pub\"", hostname))
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(ssh.MarshalAuthorizedKey(cert))
+}
+
+func (s *Server) handleAdminHostAPIKey(w http.ResponseWriter, r *http.Request) {
+	username := s.authenticate(r)
+	if username != "admin" {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	hostname := r.FormValue("hostname")
+	if hostname == "" {
+		http.Error(w, "Missing hostname", 400)
+		return
+	}
+
+	// Generate a random API key
+	key := make([]byte, 32)
+	rand.Read(key)
+	apiKey := base64.StdEncoding.EncodeToString(key)
+
+	hash := auth.HashAPIKey(apiKey)
+	if err := s.db.SetHostAPIKey(hostname, hash); err != nil {
+		http.Error(w, "Failed to save API key", 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(username)
+	s.db.LogEvent(&uid, "host_api_key_generated", hostname)
+
+	s.renderPage(w, "admin_host_apikey.html", map[string]any{
+		"User":     username,
+		"Hostname": hostname,
+		"APIKey":   apiKey,
+	})
 }
 
 func (s *Server) handleAdminRevoke(w http.ResponseWriter, r *http.Request) {
@@ -636,6 +641,9 @@ func (s *Server) handleAdminRevoke(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleKRL(w http.ResponseWriter, r *http.Request) {
+	if !s.checkHardenedAuth(w, r) {
+		return
+	}
 	keys, err := s.db.ListRevokedPublicKeys()
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -664,14 +672,23 @@ func (s *Server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 	code := r.FormValue("code")
 	secret, _ := s.db.GetUserMFASecret(username)
 
+	// Check TOTP first
 	totp := gotp.NewDefaultTOTP(secret)
-	if totp.Verify(code, time.Now().Unix()) {
+	valid := totp.Verify(code, time.Now().Unix())
+
+	// If TOTP fails, check backup codes
+	if !valid {
+		hash := auth.HashAPIKey(code) // Using same hash as API keys
+		valid, _ = s.db.VerifyBackupCode(username, hash)
+	}
+
+	if valid {
 		// Clear pending cookie
 		http.SetCookie(w, &http.Cookie{Name: "mfa_pending_user", MaxAge: -1, Path: "/"})
 		s.setSession(w, username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
-		s.renderPage(w, "login_mfa.html", map[string]any{"User": username, "Error": "Invalid MFA code"})
+		s.renderPage(w, "login_mfa.html", map[string]any{"User": username, "Error": "Invalid MFA code or backup code"})
 	}
 }
 
@@ -716,23 +733,187 @@ func (s *Server) handleMFASetup(w http.ResponseWriter, r *http.Request) {
 		s.db.SetUserMFASecret(username, secret)
 		uid, _ := s.db.GetUserID(username)
 		s.db.LogEvent(&uid, "mfa_enabled", "")
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+
+		// Generate backup codes
+		codes, err := s.generateBackupCodes(username)
+		if err != nil {
+			log.Printf("failed to generate backup codes: %v", err)
+		}
+
+		s.renderPage(w, "mfa_backup_codes.html", map[string]any{
+			"User":  username,
+			"Codes": codes,
+		})
 	} else {
 		// Redirect back with error (simulated here)
 		http.Error(w, "Invalid verification code", 400)
 	}
 }
 
+func (s *Server) generateBackupCodes(username string) ([]string, error) {
+	var plainCodes []string
+	var hashedCodes []string
+	for i := 0; i < 10; i++ {
+		code := make([]byte, 8)
+		if _, err := rand.Read(code); err != nil {
+			return nil, err
+		}
+		plain := hex.EncodeToString(code)
+		plainCodes = append(plainCodes, plain)
+		hashedCodes = append(hashedCodes, auth.HashAPIKey(plain))
+	}
+	err := s.db.SetBackupCodes(username, hashedCodes)
+	return plainCodes, err
+}
+
 func (s *Server) handleAPIUserCA(w http.ResponseWriter, r *http.Request) {
+	if !s.checkHardenedAuth(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(ssh.MarshalAuthorizedKey(s.ca.GetUserCAPublicKey()))
 }
 
 func (s *Server) handleAPIHostCA(w http.ResponseWriter, r *http.Request) {
+	if !s.checkHardenedAuth(w, r) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(ssh.MarshalAuthorizedKey(s.ca.GetHostCAPublicKey()))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
+}
+
+func (s *Server) handleAPIHostRenew(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	pubkeyStr := r.FormValue("pubkey")
+	if pubkeyStr == "" {
+		http.Error(w, "Missing pubkey", 400)
+		return
+	}
+
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubkeyStr))
+	if err != nil {
+		http.Error(w, "Invalid public key", 400)
+		return
+	}
+	fingerprint := ssh.FingerprintSHA256(pubKey)
+
+	apiKey := r.Header.Get("X-Host-API-Key")
+	var hostname string
+
+	if apiKey != "" {
+		hash := auth.HashAPIKey(apiKey)
+		hostname, err = s.db.GetHostByAPIKey(hash)
+		if err != nil {
+			http.Error(w, "Unauthorized (Invalid API Key)", 401)
+			return
+		}
+	} else {
+		// Attempt PoP renewal
+		var err error
+		hostname, err = s.db.CheckHostPublicKeyOwnership(fingerprint)
+		if err != nil {
+			http.Error(w, "Host key not enrolled. API Key required for initial setup.", 401)
+			return
+		}
+
+		ok, _ := s.verifyPoP(w, r, pubKey)
+		if !ok {
+			return
+		}
+	}
+
+	// Sign the host key
+	principals := []string{hostname}
+	cert, err := s.ca.SignHostCertificate(pubKey, hostname, principals, 365*24*3600)
+	if err != nil {
+		log.Printf("host renewal failed for %s: %v", hostname, err)
+		http.Error(w, "Internal server error during signing", 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write(ssh.MarshalAuthorizedKey(cert))
+}
+
+func (s *Server) verifyPoP(w http.ResponseWriter, r *http.Request, pubKey ssh.PublicKey) (bool, string) {
+	fingerprint := ssh.FingerprintSHA256(pubKey)
+	sigBase64 := r.Header.Get("X-SSH-Signature")
+	challengeVal := r.Header.Get("X-SSH-Challenge")
+
+	if sigBase64 == "" {
+		// Generate Challenge
+		cBytes := make([]byte, 32)
+		rand.Read(cBytes)
+		cStr := base64.StdEncoding.EncodeToString(cBytes)
+		s.challenges[fingerprint] = challenge{val: cStr, expires: time.Now().Add(5 * time.Minute)}
+
+		w.Header().Set("X-SSH-Challenge", cStr)
+		http.Error(w, "Proof of Possession required", 401)
+		return false, "PoP required"
+	}
+
+	// Verify Challenge
+	stored, ok := s.challenges[fingerprint]
+	if !ok || stored.val != challengeVal || time.Now().After(stored.expires) {
+		http.Error(w, "Invalid or expired challenge", 401)
+		return false, "Invalid challenge"
+	}
+	delete(s.challenges, fingerprint)
+
+	sigBytes, err := base64.StdEncoding.DecodeString(sigBase64)
+	if err != nil {
+		http.Error(w, "Invalid signature format", 400)
+		return false, "Invalid signature"
+	}
+	var sig ssh.Signature
+	if err := ssh.Unmarshal(sigBytes, &sig); err != nil {
+		http.Error(w, "Invalid signature encoding", 400)
+		return false, "Invalid signature encoding"
+	}
+
+	if err := pubKey.Verify([]byte(challengeVal), &sig); err != nil {
+		http.Error(w, "Signature verification failed", 401)
+		return false, "Signature failed"
+	}
+
+	return true, ""
+}
+func (s *Server) checkHardenedAuth(w http.ResponseWriter, r *http.Request) bool {
+	if !s.cfg.HardenedTrustSync {
+		return true
+	}
+
+	// 1. Check for Host API Key
+	if apiKey := r.Header.Get("X-Host-API-Key"); apiKey != "" {
+		hash := auth.HashAPIKey(apiKey)
+		_, err := s.db.GetHostByAPIKey(hash)
+		if err == nil {
+			return true
+		}
+	}
+
+	// 2. Check for User API Key
+	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
+		hash := auth.HashAPIKey(apiKey)
+		_, err := s.db.GetUserByAPIKey(hash)
+		if err == nil {
+			return true
+		}
+	}
+
+	// 3. Also allow authenticated web sessions
+	if s.authenticate(r) != "" {
+		return true
+	}
+
+	http.Error(w, "Unauthorized (Hardened Trust Sync enabled)", 401)
+	return false
 }

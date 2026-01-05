@@ -10,6 +10,17 @@ type Config struct {
 	DBPath   string
 	KeyPath  string
 	Mode     string // "online" or "offline"
+	// Security configuration
+	PKCS11            PKCS11Config `json:"pkcs11"`
+	HardenedTrustSync bool         `json:"hardened_trust_sync"`
+}
+
+type PKCS11Config struct {
+	Enabled    bool   `json:"enabled"`
+	Module     string `json:"module"`
+	TokenLabel string `json:"token_label"`
+	PIN        string `json:"pin"`
+	KeyLabel   string `json:"key_label"`
 }
 
 // Load reads configuration from environment variables or defaults
@@ -34,10 +45,13 @@ func Load() (*Config, error) {
 		keyPath = "ca-keys"
 	}
 
+	hardened := os.Getenv("CA_HARDENED_SYNC") == "true"
+
 	return &Config{
-		BindAddr: bindAddr,
-		DBPath:   dbPath,
-		KeyPath:  keyPath,
-		Mode:     mode,
+		BindAddr:          bindAddr,
+		DBPath:            dbPath,
+		KeyPath:           keyPath,
+		Mode:              mode,
+		HardenedTrustSync: hardened,
 	}, nil
 }

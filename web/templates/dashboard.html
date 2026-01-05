@@ -1,99 +1,98 @@
 {{define "content"}}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-        <h2 style="margin: 0;">Request Certificate</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+        <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">Request Certificate</h2>
         {{if .IsAdmin}}
-        <div>
+        <div style="display: flex; gap: 1.5rem; align-items: center;">
             <a href="/mfa/setup"
-                style="color: var(--primary); text-decoration: none; font-size: 0.9rem; font-weight: 600; margin-right: 1.5rem;">Secure
+                style="color: var(--primary); text-decoration: none; font-size: 0.85rem; font-weight: 600;">Secure
                 Account (MFA)</a>
             {{if eq .Mode "offline"}}
             <a href="/admin/offline"
-                style="color: #ffc107; text-decoration: none; font-size: 0.9rem; font-weight: 600; margin-right: 1.5rem;">Offline
+                style="color: #fbbf24; text-decoration: none; font-size: 0.85rem; font-weight: 600;">Offline
                 Management</a>
             {{else}}
             <a href="/admin/hosts/sign"
-                style="color: var(--primary); text-decoration: none; font-size: 0.9rem; font-weight: 600; margin-right: 1.5rem;">Host
+                style="color: var(--primary); text-decoration: none; font-size: 0.85rem; font-weight: 600;">Host
                 Signing</a>
             {{end}}
             <a href="/admin/users"
-                style="color: var(--primary); text-decoration: none; font-size: 0.9rem; font-weight: 600;">Admin Panel
-                &rarr;</a>
+                style="color: var(--primary); text-decoration: none; font-size: 0.85rem; font-weight: 600; background: rgba(59, 130, 246, 0.1); padding: 0.4rem 0.8rem; border-radius: 6px;">Admin
+                Panel &rarr;</a>
         </div>
         {{end}}
     </div>
     <form action="/cert/request" method="POST">
         <label for="pubkey">SSH Public Key</label>
-        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."></textarea>
+        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3..."></textarea>
 
-        <label for="ttl">Validity</label>
-        <select id="ttl" name="ttl"
-            style="width: 100%; padding: 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;">
-            <option value="3600">1 Hour</option>
-            <option value="28800">8 Hours</option>
-            <option value="86400">24 Hours</option>
+        <label for="ttl">Validity Duration</label>
+        <select id="ttl" name="ttl">
+            <option value="3600">Short-lived (1 Hour)</option>
+            <option value="28800">Standard (8 Hours)</option>
+            <option value="86400">Long-lived (24 Hours)</option>
         </select>
 
-        <button type="submit" style="margin-top: 1rem;">Sign Key</button>
+        <button type="submit">Sign Certificate</button>
     </form>
 </div>
 
 <div class="card">
-    <h2>CA Public Keys</h2>
-    <p style="color: var(--text-muted)">Add these to your server configuration.</p>
+    <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">CA Public Keys</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Add these to your server
+        configuration to enable trust.</p>
 
     <label>User CA Key (TrustedUserCAKeys)</label>
-    <input type="text" readonly value="{{.UserCAKey}}" onclick="this.select()">
+    <div style="position: relative;">
+        <input type="text" readonly value="{{.UserCAKey}}" onclick="this.select()"
+            style="font-family: monospace; font-size: 0.8rem; padding-right: 3rem;">
+        <span
+            style="position: absolute; right: 1rem; top: 0.75rem; color: var(--text-muted); font-size: 0.7rem; pointer-events: none;">COPIABLE</span>
+    </div>
 
     <label>Host CA Key (HostCertificate)</label>
-    <input type="text" readonly value="{{.HostCAKey}}" onclick="this.select()">
+    <div style="position: relative;">
+        <input type="text" readonly value="{{.HostCAKey}}" onclick="this.select()"
+            style="font-family: monospace; font-size: 0.8rem; padding-right: 3rem;">
+        <span
+            style="position: absolute; right: 1rem; top: 0.75rem; color: var(--text-muted); font-size: 0.7rem; pointer-events: none;">COPIABLE</span>
+    </div>
 </div>
 
 <div class="card">
-    <h2>Server Setup (sshd_config)</h2>
-    <p style="color: var(--text-muted)">Add these lines to <code>/etc/ssh/sshd_config</code> to trust user certificates.
-    </p>
+    <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">Server Setup (sshd_config)</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Configure
+        <code>/etc/ssh/sshd_config</code> to trust user certificates.</p>
     <pre
-        style="background: var(--bg); padding: 1rem; border-radius: 4px; border: 1px solid var(--border); overflow-x: auto; font-size: 0.85rem;">
+        style="background: #0b0f1a; padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); overflow-x: auto; font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">
 # 1. Trust users signed by this CA
 TrustedUserCAKeys /etc/ssh/user_ca.pub
 
 # 2. (Recommended) Set your host certificate
 HostCertificate /etc/ssh/ssh_host_ed25519-cert.pub</pre>
-    <p style="font-size: 0.8rem; color: var(--text-muted)">Make sure to save the <b>User CA Key</b> to
-        <code>/etc/ssh/user_ca.pub</code>.
-    </p>
+    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 1rem;">Save the <b>User CA Key</b> to
+        <code>/etc/ssh/user_ca.pub</code> and restart sshd.</p>
 </div>
 
 <div class="card">
-    <h2>Client Setup (~/.ssh/config)</h2>
-    <p style="color: var(--text-muted)">Add this to your local machine to trust all hosts signed by this CA.</p>
-    <pre
-        style="background: var(--bg); padding: 1rem; border-radius: 4px; border: 1px solid var(--border); overflow-x: auto; font-size: 0.85rem;">
-# Trust all hosts in your domain
-Host *.homelab.local
-    GlobalKnownHostsFile ~/.ssh/known_hosts_ca
-    # (Optionally) Specify identity
-    CertificateFile ~/.ssh/id_ed25519-cert.pub</pre>
-    <p style="font-size: 0.8rem; color: var(--text-muted)">Save the <b>Host CA Key</b> to
-        <code>~/.ssh/known_hosts_ca</code> with the prefix <code>@cert-authority * </code>.
-    </p>
-</div>
-
-<div class="card">
-    <h2>API Keys</h2>
+    <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">API Keys</h2>
     {{if .NewAPIKey}}
     <div
-        style="background: rgba(0,255,0,0.1); border: 1px solid #4CAF50; padding: 1rem; margin-bottom: 1rem; border-radius: 4px;">
-        <p><strong>Brand New API Key:</strong></p>
+        style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); padding: 1.25rem; margin-bottom: 1.5rem; border-radius: 8px;">
+        <p style="margin: 0 0 0.5rem 0; font-weight: 600; color: var(--success); font-size: 0.9rem;">New API Key
+            Generated:</p>
         <code
-            style="word-break: break-all; background: var(--bg); display: block; padding: 0.5rem; border-radius: 4px;">{{.NewAPIKey}}</code>
-        <p><small>Save this now! You won't see it again.</small></p>
+            style="word-break: break-all; background: #0b0f1a; display: block; padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; border: 1px solid rgba(16, 185, 129, 0.2);">{{.NewAPIKey}}</code>
+        <p style="margin: 0.5rem 0 0 0; font-size: 0.75rem; color: var(--text-muted);">This will not be shown again.
+            Save it securely.</p>
     </div>
     {{end}}
-    <p style="color: var(--text-muted)">Use API keys to authenticate via CLI.</p>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Use API keys to authenticate via the
+        CLI tool.</p>
     <form action="/api/keys/generate" method="POST">
-        <button type="submit">Generate New API Key</button>
+        <button type="submit"
+            style="background: var(--surface); border: 1px solid var(--border); margin-top: 0;">Generate New API
+            Key</button>
     </form>
 </div>
 {{end}}

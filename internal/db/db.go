@@ -93,7 +93,17 @@ func (d *DB) migrate() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		hostname TEXT NOT NULL UNIQUE,
 		fingerprint TEXT NOT NULL,
+		api_key_hash TEXT, -- For agent-initiated renewal
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS mfa_backup_codes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		code_hash TEXT NOT NULL,
+		used INTEGER NOT NULL DEFAULT 0, -- 0=unused, 1=used
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
 	`
 	_, err := d.Exec(schema)
@@ -106,6 +116,7 @@ func (d *DB) migrate() error {
 	_, _ = d.Exec("ALTER TABLE users ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
 	_, _ = d.Exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
 	_, _ = d.Exec("ALTER TABLE users ADD COLUMN mfa_secret TEXT")
+	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN api_key_hash TEXT")
 
 	return nil
 }
@@ -264,6 +275,54 @@ func (d *DB) GetUserMFASecret(username string) (string, error) {
 	return secret.String, nil
 }
 
+// SetBackupCodes stores a list of hashed backup codes for a user, clearing old ones
+func (d *DB) SetBackupCodes(username string, hashes []string) error {
+	userID, err := d.GetUserID(username)
+	if err != nil {
+		return err
+	}
+
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec("DELETE FROM mfa_backup_codes WHERE user_id = ?", userID)
+	if err != nil {
+		return err
+	}
+
+	for _, hash := range hashes {
+		_, err = tx.Exec("INSERT INTO mfa_backup_codes (user_id, code_hash) VALUES (?, ?)", userID, hash)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// VerifyBackupCode checks if a code is valid for a user and marks it used
+func (d *DB) VerifyBackupCode(username, codeHash string) (bool, error) {
+	userID, err := d.GetUserID(username)
+	if err != nil {
+		return false, err
+	}
+
+	var id int
+	err = d.QueryRow("SELECT id FROM mfa_backup_codes WHERE user_id = ? AND code_hash = ? AND used = 0", userID, codeHash).Scan(&id)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	_, err = d.Exec("UPDATE mfa_backup_codes SET used = 1 WHERE id = ?", id)
+	return err == nil, err
+}
+
 // SetUserEnabled toggles a user's active status
 func (d *DB) SetUserEnabled(username string, enabled bool) error {
 	val := 0
@@ -291,6 +350,56 @@ func (d *DB) IsUserEnabled(username string) bool {
 	return enabled == 1
 }
 
+// GetHostByAPIKey returns the hostname if the API key hash matches
+func (d *DB) GetHostByAPIKey(keyHash string) (string, error) {
+	var hostname string
+	err := d.QueryRow("SELECT hostname FROM hosts WHERE api_key_hash = ?", keyHash).Scan(&hostname)
+	if err != nil {
+		return "", err
+	}
+	return hostname, nil
+}
+
+// SetHostAPIKey stores a hashed API key for a host
+func (d *DB) SetHostAPIKey(hostname, keyHash string) error {
+	_, err := d.Exec("UPDATE hosts SET api_key_hash = ? WHERE hostname = ?", keyHash, hostname)
+	return err
+}
+
+// RegisterHost creates a new host entry
+func (d *DB) RegisterHost(hostname, fingerprint string) error {
+	_, err := d.Exec("INSERT INTO hosts (hostname, fingerprint) VALUES (?, ?)", hostname, fingerprint)
+	return err
+}
+
+// Host represents a host in the system
+type Host struct {
+	ID          int
+	Hostname    string
+	Fingerprint string
+	HasAPIKey   bool
+	CreatedAt   string
+}
+
+// ListHosts returns all registered hosts
+func (d *DB) ListHosts() ([]Host, error) {
+	rows, err := d.Query("SELECT id, hostname, fingerprint, (api_key_hash IS NOT NULL), created_at FROM hosts")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var hosts []Host
+	for rows.Next() {
+		var h Host
+		if err := rows.Scan(&h.ID, &h.Hostname, &h.Fingerprint, &h.HasAPIKey, &h.CreatedAt); err != nil {
+			return nil, err
+		}
+		hosts = append(hosts, h)
+	}
+	return hosts, nil
+}
+
 // RegisterPublicKey associates a public key with a user
 func (d *DB) RegisterPublicKey(userID int, fingerprint, keyType, content, comment string) error {
 	_, err := d.Exec(`
@@ -311,6 +420,13 @@ func (d *DB) CheckPublicKeyOwnership(fingerprint string) (string, error) {
 		WHERE pk.fingerprint = ?
 	`, fingerprint).Scan(&username)
 	return username, err
+}
+
+// CheckHostPublicKeyOwnership returns the hostname if the key is registered to a host
+func (d *DB) CheckHostPublicKeyOwnership(fingerprint string) (string, error) {
+	var hostname string
+	err := d.QueryRow("SELECT hostname FROM hosts WHERE fingerprint = ?", fingerprint).Scan(&hostname)
+	return hostname, err
 }
 
 // LogEvent writes an entry to the audit log

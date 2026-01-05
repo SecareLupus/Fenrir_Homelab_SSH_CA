@@ -25,7 +25,7 @@ func main() {
 	defer database.Close()
 
 	// 3. Initialize CA Service
-	caService, err := ca.New(cfg.KeyPath)
+	caService, err := ca.New(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize CA: %v", err)
 	}

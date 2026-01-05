@@ -1,17 +1,23 @@
 {{define "content"}}
-<div class="card" style="max-width: 400px; margin: 4rem auto;">
-    <h2 style="margin-top: 0">Login</h2>
+<div class="card" style="max-width: 440px; margin: 6rem auto;">
+    <h2 style="margin-top: 0; font-size: 1.75rem; letter-spacing: -0.03em; text-align: center;">Welcome Back</h2>
+    <p style="text-align: center; color: var(--text-muted); font-size: 0.95rem; margin-bottom: 2.5rem;">Secure access to
+        your homelab infrastructure.</p>
+
     <form action="/login" method="POST">
         <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autofocus>
+        <input type="text" id="username" name="username" placeholder="e.g. admin" required autofocus>
 
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" required>
+        <input type="password" id="password" name="password" placeholder="••••••••" required>
 
-        <button type="submit">Sign In</button>
+        <button type="submit" style="margin-top: 1rem; padding: 1rem;">Sign In</button>
     </form>
-    <p style="color: var(--text-muted); font-size: 0.9rem; text-align: center;">
-        First login will create the admin account.
-    </p>
+
+    <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); text-align: center;">
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">
+            <b>First run?</b> Login with your desired admin credentials to bootstrap the system.
+        </p>
+    </div>
 </div>
 {{end}}

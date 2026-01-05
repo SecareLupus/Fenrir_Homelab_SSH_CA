@@ -1,63 +1,69 @@
 {{define "content"}}
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-        <h2 style="margin: 0;">Offline Root Setup</h2>
-        <a href="/" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Dashboard</a>
+<div class="card" style="max-width: 800px; margin: 0 auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+        <div>
+            <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">Offline Root Management</h2>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">High-security environment for
+                signing Intermediate CAs.</p>
+        </div>
+        <a href="/" class="btn-secondary">&larr; Dashboard</a>
     </div>
 
-    <p>This instance is running in <strong>OFFLINE ROOT</strong> mode. Use this tool to sign an intermediate CA
-        certificate for your online instance.</p>
-
     <div
-        style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 1rem; margin-bottom: 2rem;">
-        <p style="margin: 0; font-size: 0.9rem;"><strong>Security Note:</strong> After signing the intermediate
-            certificates, you should save them and then <strong>shut down</strong> this machine or service until you
-            need to rotate the intermediate keys.</p>
+        style="background: rgba(251, 191, 36, 0.1); border-left: 4px solid #fbbf24; padding: 1.25rem; margin-bottom: 3rem; border-radius: 0 8px 8px 0;">
+        <h4 style="margin: 0 0 0.5rem 0; color: #fbbf24; font-size: 0.95rem;">🔒 Offline Mode Active</h4>
+        <p style="margin: 0; font-size: 0.875rem; color: #94a3b8; line-height: 1.6;">
+            This instance is running as an <b>OFFLINE ROOT</b>. Sign intermediate certificates for your online
+            instances, then shut down this machine.
+        </p>
     </div>
 
     <form action="/admin/offline/sign" method="POST">
         <label for="type">Intermediate Type</label>
-        <select id="type" name="type"
-            style="width: 100%; padding: 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 1rem;">
+        <select id="type" name="type" style="margin-bottom: 1.5rem;">
             <option value="user">User CA Intermediate</option>
             <option value="host">Host CA Intermediate</option>
         </select>
 
         <label for="pubkey">Intermediate CSR (Public Key)</label>
-        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3..."></textarea>
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">Paste the <code>user_ca.pub</code>
-            or <code>host_ca.pub</code> from your online instance.</p>
+        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3..."
+            style="font-family: monospace; font-size: 0.85rem;"></textarea>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin: -0.75rem 0 1.5rem 0;">Paste the
+            <code>user_ca.pub</code> or <code>host_ca.pub</code> from your online instance.</p>
 
-        <label for="ttl">Validity (Seconds)</label>
-        <input type="number" id="ttl" name="ttl" value="31536000">
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">Default is 1 year (31,536,000
+        <label for="ttl">Certificate Validity (Seconds)</label>
+        <input type="number" id="ttl" name="ttl" value="31536000" style="margin-bottom: 0.5rem;">
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 2rem;">Recommended: 1 Year (31,536,000
             seconds).</p>
 
         <button type="submit">Sign Intermediate Certificate</button>
     </form>
 </div>
 
-<div class="card" style="border-color: #f44336;">
-    <h2 style="color: #f44336;">Revocation (Kill Switch)</h2>
-    <p>Use this to revoke a compromised online intermediate. This will add the intermediate's public key to the Root
-        KRL.</p>
+<div class="card" style="border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.02);">
+    <h2 style="color: var(--error); font-size: 1.25rem; margin-bottom: 0.5rem;">Emergency Kill Switch</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Revoke a compromised online
+        intermediate. This will update the Root KRL.</p>
     <form action="/admin/revoke" method="POST">
         <label for="fingerprint">Intermediate Public Key (or Fingerprint)</label>
-        <textarea id="fingerprint" name="fingerprint" rows="2" placeholder="ssh-ed25519 AAAAC3..."></textarea>
+        <textarea id="fingerprint" name="fingerprint" rows="2" placeholder="ssh-ed25519 AAAAC3..."
+            style="font-family: monospace; font-size: 0.85rem;"></textarea>
         <input type="hidden" name="reason" value="INTERMEDIATE_COMPROMISE">
-        <button type="submit" style="background: #f44336; margin-top: 1rem;">Revoke Intermediate</button>
+        <button type="submit" style="background: var(--error); margin-top: 1rem;">Revoke Intermediate</button>
     </form>
 </div>
 
 <div class="card">
-    <h2>Root CA Keys (Fleet Trust)</h2>
-    <p style="color: var(--text-muted)">Flash your target hosts (sshd_config) and clients with these ROOT keys. They
-        will then trust any intermediate you sign here.</p>
+    <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem;">Flash Root Trust</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem;">Distribute these ROOT keys to all
+        hosts. They will inherently trust any intermediate signed by this root.</p>
 
     <label>Root User CA Public Key</label>
-    <input type="text" readonly value="{{.UserCAKey}}" onclick="this.select()">
+    <input type="text" readonly value="{{.UserCAKey}}" onclick="this.select()"
+        style="font-family: monospace; font-size: 0.8rem; margin-bottom: 1.5rem;">
 
     <label>Root Host CA Public Key</label>
-    <input type="text" readonly value="{{.HostCAKey}}" onclick="this.select()">
+    <input type="text" readonly value="{{.HostCAKey}}" onclick="this.select()"
+        style="font-family: monospace; font-size: 0.8rem; margin-bottom: 0;">
 </div>
 {{end}}

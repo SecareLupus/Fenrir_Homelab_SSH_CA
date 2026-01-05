@@ -1,80 +1,133 @@
 {{define "content"}}
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-        <h2 style="margin: 0;">User Management</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
         <div>
-            <a href="/admin/audit" class="btn-secondary"
-                style="text-decoration: none; font-size: 0.9rem; margin-right: 1rem;">Audit Log</a>
-            <a href="/admin/audit/identity" class="btn-secondary"
-                style="text-decoration: none; font-size: 0.9rem; margin-right: 1rem;">Identity Audit</a>
-            <a href="/" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Dashboard</a>
+            <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">User Management</h2>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Control access and manage
+                roles for your CA.</p>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+            <a href="/admin/audit" class="btn-secondary">Audit Log</a>
+            <a href="/admin/audit/identity" class="btn-secondary">Identity Audit</a>
+            <a href="/" class="btn-secondary">&larr; Dashboard</a>
         </div>
     </div>
 
-    <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
-        <thead>
-            <tr style="text-align: left; border-bottom: 2px solid var(--border);">
-                <th style="padding: 1rem;">Username</th>
-                <th style="padding: 1rem;">Role</th>
-                <th style="padding: 1rem;">Status</th>
-                <th style="padding: 1rem; text-align: right;">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{range .Users}}
-            <tr style="border-bottom: 1px solid var(--border);">
-                <td style="padding: 1rem; font-weight: 500;">{{.Username}}</td>
-                <td style="padding: 1rem;"><span class="badge">{{.Role}}</span></td>
-                <td style="padding: 1rem;">
-                    {{if .Enabled}}
-                    <span style="color: #4CAF50; display: flex; align-items: center; gap: 0.5rem;">
-                        <span style="width: 8px; height: 8px; background: #4CAF50; border-radius: 50%;"></span>
-                        Active
-                    </span>
-                    {{else}}
-                    <span style="color: #f44336; display: flex; align-items: center; gap: 0.5rem;">
-                        <span style="width: 8px; height: 8px; background: #f44336; border-radius: 50%;"></span>
-                        Disabled
-                    </span>
-                    {{end}}
-                </td>
-                <td style="padding: 1rem; text-align: right;">
-                    {{if ne .Username "admin"}}
-                    <form action="/admin/users/toggle" method="POST" style="display: inline;">
-                        <input type="hidden" name="username" value="{{.Username}}">
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Username</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Role</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Status</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); text-align: right;">
+                        Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Users}}
+                <tr class="table-row">
+                    <td style="padding: 1.25rem 1rem; font-weight: 500;">{{.Username}}</td>
+                    <td style="padding: 1.25rem 1rem;"><span class="badge">{{.Role}}</span></td>
+                    <td style="padding: 1.25rem 1rem;">
                         {{if .Enabled}}
-                        <input type="hidden" name="action" value="disable">
-                        <button type="submit"
-                            style="background: #f44336; padding: 0.4rem 0.8rem; font-size: 0.8rem;">Disable</button>
+                        <span
+                            style="color: var(--success); display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 500;">
+                            <span
+                                style="width: 6px; height: 6px; background: var(--success); border-radius: 50%; box-shadow: 0 0 8px var(--success);"></span>
+                            Active
+                        </span>
                         {{else}}
-                        <input type="hidden" name="action" value="enable">
-                        <button type="submit"
-                            style="background: #4CAF50; padding: 0.4rem 0.8rem; font-size: 0.8rem;">Enable</button>
+                        <span
+                            style="color: var(--text-muted); display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 500;">
+                            <span
+                                style="width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%;"></span>
+                            Disabled
+                        </span>
                         {{end}}
-                    </form>
-                    {{else}}
-                    <span style="color: var(--text-muted); font-size: 0.8rem;">Protected</span>
-                    {{end}}
-                </td>
-            </tr>
-            {{end}}
-        </tbody>
-    </table>
+                    </td>
+                    <td style="padding: 1.25rem 1rem; text-align: right;">
+                        {{if ne .Username "admin"}}
+                        <form action="/admin/users/toggle" method="POST" style="display: inline;">
+                            <input type="hidden" name="username" value="{{.Username}}">
+                            {{if .Enabled}}
+                            <input type="hidden" name="action" value="disable">
+                            <button type="submit" class="btn-action btn-disable">Disable</button>
+                            {{else}}
+                            <input type="hidden" name="action" value="enable">
+                            <button type="submit" class="btn-action btn-enable">Enable</button>
+                            {{end}}
+                        </form>
+                        {{else}}
+                        <span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">System
+                            Protected</span>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <style>
-    .badge {
-        background: var(--bg);
-        border: 1px solid var(--border);
-        padding: 0.2rem 0.5rem;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+    .table-row {
+        border-bottom: 1px solid var(--border);
+        transition: var(--transition);
     }
 
-    table tr:hover {
+    .table-row:hover {
         background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+        background: #1e293b;
+        border: 1px solid var(--border);
+        padding: 0.25rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #94a3b8;
+    }
+
+    .btn-action {
+        width: auto;
+        margin: 0;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.75rem;
+        border-radius: 6px;
+        font-weight: 700;
+    }
+
+    .btn-disable {
+        background: rgba(239, 68, 68, 0.1);
+        color: #fca5a5;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .btn-disable:hover {
+        background: var(--error);
+        color: white;
+    }
+
+    .btn-enable {
+        background: rgba(16, 185, 129, 0.1);
+        color: #6ee7b7;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .btn-enable:hover {
+        background: var(--success);
+        color: white;
     }
 </style>
 {{end}}

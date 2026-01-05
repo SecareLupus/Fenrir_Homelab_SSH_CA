@@ -6,47 +6,73 @@ import (
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
+
+	"ssh-ca/internal/config"
 
 	"golang.org/x/crypto/ssh"
 )
 
 // Service handles all CA operations
 type Service struct {
-	userSigner ssh.Signer
-	hostSigner ssh.Signer
+	userSigners []ssh.Signer
+	hostSigners []ssh.Signer
 }
 
 func (s *Service) GetUserCAPublicKey() ssh.PublicKey {
-	return s.userSigner.PublicKey()
+	if len(s.userSigners) == 0 {
+		return nil
+	}
+	return s.userSigners[0].PublicKey()
 }
 
 func (s *Service) GetHostCAPublicKey() ssh.PublicKey {
-	return s.hostSigner.PublicKey()
+	if len(s.hostSigners) == 0 {
+		return nil
+	}
+	return s.hostSigners[0].PublicKey()
 }
 
 // New creates a new CA service, loading or generating keys as needed
-func New(keyDir string) (*Service, error) {
+func New(cfg *config.Config) (*Service, error) {
+	keyDir := cfg.KeyPath
 	if err := os.MkdirAll(keyDir, 0700); err != nil {
 		return nil, fmt.Errorf("create key dir: %w", err)
 	}
 
+	s := &Service{}
+
+	// 1. Load Software Keys (Fallback)
 	userSigner, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY")
 	if err != nil {
 		return nil, fmt.Errorf("user ca key: %w", err)
 	}
+	s.userSigners = append(s.userSigners, userSigner)
 
 	hostSigner, err := loadOrGenKey(filepath.Join(keyDir, "host_ca"), "SSH CA HOST KEY")
 	if err != nil {
 		return nil, fmt.Errorf("host ca key: %w", err)
 	}
+	s.hostSigners = append(s.hostSigners, hostSigner)
 
-	return &Service{
-		userSigner: userSigner,
-		hostSigner: hostSigner,
-	}, nil
+	// 2. Load PKCS#11 Keys (Preferred)
+	if cfg.PKCS11.Enabled {
+		log.Printf("PKCS#11 enabled, attempting to load hardware keys for %s...", cfg.PKCS11.TokenLabel)
+		pkUs, pkHs, err := LoadPKCS11Signers(cfg.PKCS11)
+		if err != nil {
+			log.Printf("Warning: PKCS#11 hardware initialization failed: %v", err)
+			log.Printf("Falling back to software-only signing.")
+		} else {
+			// Prepend hardware signers so they are used first
+			s.userSigners = append(pkUs, s.userSigners...)
+			s.hostSigners = append(pkHs, s.hostSigners...)
+		}
+	}
+
+	return s, nil
 }
 
 func loadOrGenKey(path, headers string) (ssh.Signer, error) {
@@ -88,12 +114,18 @@ func loadOrGenKey(path, headers string) (ssh.Signer, error) {
 
 // SignUserCertificate signs a public key for user authentication
 func (s *Service) SignUserCertificate(pubKey ssh.PublicKey, keyID string, principals []string, ttl uint64) (*ssh.Certificate, error) {
-	return s.sign(s.userSigner, pubKey, keyID, principals, ttl, ssh.UserCert)
+	if len(s.userSigners) == 0 {
+		return nil, fmt.Errorf("no user signers available")
+	}
+	return s.sign(s.userSigners[0], pubKey, keyID, principals, ttl, ssh.UserCert)
 }
 
 // SignHostCertificate signs a public key for host authentication
 func (s *Service) SignHostCertificate(pubKey ssh.PublicKey, keyID string, principals []string, ttl uint64) (*ssh.Certificate, error) {
-	return s.sign(s.hostSigner, pubKey, keyID, principals, ttl, ssh.HostCert)
+	if len(s.hostSigners) == 0 {
+		return nil, fmt.Errorf("no host signers available")
+	}
+	return s.sign(s.hostSigners[0], pubKey, keyID, principals, ttl, ssh.HostCert)
 }
 
 func (s *Service) sign(signer ssh.Signer, pubKey ssh.PublicKey, keyID string, principals []string, ttl uint64, certType uint32) (*ssh.Certificate, error) {
@@ -156,7 +188,10 @@ func (s *Service) SignIntermediateUserCertificate(pubKey ssh.PublicKey, keyID st
 		// For now, identity is what matters.
 	}
 
-	if err := cert.SignCert(rand.Reader, s.userSigner); err != nil {
+	if len(s.userSigners) == 0 {
+		return nil, fmt.Errorf("no user signers available")
+	}
+	if err := cert.SignCert(rand.Reader, s.userSigners[0]); err != nil {
 		return nil, err
 	}
 	return cert, nil
@@ -179,7 +214,10 @@ func (s *Service) SignIntermediateHostCertificate(pubKey ssh.PublicKey, keyID st
 		ValidBefore: uint64(expires.Unix()),
 	}
 
-	if err := cert.SignCert(rand.Reader, s.hostSigner); err != nil {
+	if len(s.hostSigners) == 0 {
+		return nil, fmt.Errorf("no host signers available")
+	}
+	if err := cert.SignCert(rand.Reader, s.hostSigners[0]); err != nil {
 		return nil, err
 	}
 	return cert, nil

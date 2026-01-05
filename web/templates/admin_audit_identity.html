@@ -1,69 +1,110 @@
 {{define "content"}}
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-        <h2 style="margin: 0;">Identity Audit</h2>
-        <a href="/admin/users" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Back</a>
+<div class="card" style="max-width: 900px; margin: 0 auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+        <div>
+            <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">Identity Audit</h2>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Verify all objects created
+                during a specific timeframe.</p>
+        </div>
+        <a href="/admin/users" class="btn-secondary">&larr; Back to Users</a>
     </div>
 
-    <p style="color: var(--text-muted)">Identify and verify all objects created during a suspected compromise period.
-    </p>
-
-    <form method="GET" style="display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 2rem;">
+    <form method="GET"
+        style="display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 3rem; background: rgba(255,255,255,0.02); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
         <div style="flex: 1;">
-            <label for="since">Audit Start Date/Time</label>
-            <input type="text" id="since" name="since" value="{{.Since}}" placeholder="YYYY-MM-DD HH:MM:SS">
+            <label for="since" style="margin-bottom: 0.75rem;">Audit Start Date/Time</label>
+            <input type="text" id="since" name="since" value="{{.Since}}" placeholder="YYYY-MM-DD HH:MM:SS"
+                style="margin-bottom: 0;">
         </div>
-        <button type="submit" style="width: auto; margin: 0; height: 3rem;">Filter</button>
+        <button type="submit" style="width: auto; margin: 0; padding: 0.875rem 2rem;">Filter Records</button>
     </form>
 
     {{if .AuditResults}}
-    <h3>Suspicious Users</h3>
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
-        <thead>
-            <tr style="text-align: left; border-bottom: 1px solid var(--border);">
-                <th style="padding: 0.5rem;">Username</th>
-                <th style="padding: 0.5rem;">Created</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{range .AuditResults.Users}}
-            <tr>
-                <td style="padding: 0.5rem;">{{.Username}}</td>
-                <td style="padding: 0.5rem; color: var(--text-muted);">{{.CreatedAt}}</td>
-            </tr>
-            {{else}}
-            <tr>
-                <td colspan="2" style="padding: 1rem; text-align: center; color: var(--text-muted);">No new users in
-                    this period.</td>
-            </tr>
-            {{end}}
-        </tbody>
-    </table>
+    <div style="margin-bottom: 3rem;">
+        <h3 style="font-size: 1.1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span style="color: #60a5fa;">👤</span> Suspicious Users
+        </h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Username</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .AuditResults.Users}}
+                <tr class="table-row">
+                    <td style="padding: 1.25rem 1rem; font-weight: 500;">{{.Username}}</td>
+                    <td
+                        style="padding: 1.25rem 1rem; color: var(--text-muted); font-size: 0.9rem; font-family: monospace;">
+                        {{.CreatedAt}}</td>
+                </tr>
+                {{else}}
+                <tr>
+                    <td colspan="2"
+                        style="padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.9rem;">No new
+                        users found in this period.</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
 
-    <h3>Suspicious Public Keys</h3>
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
-        <thead>
-            <tr style="text-align: left; border-bottom: 1px solid var(--border);">
-                <th style="padding: 0.5rem;">Owner</th>
-                <th style="padding: 0.5rem;">Fingerprint</th>
-                <th style="padding: 0.5rem;">Created</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{range .AuditResults.Keys}}
-            <tr>
-                <td style="padding: 0.5rem;">{{.Username}}</td>
-                <td style="padding: 0.5rem;"><code>{{.Fingerprint}}</code></td>
-                <td style="padding: 0.5rem; color: var(--text-muted);">{{.CreatedAt}}</td>
-            </tr>
-            {{else}}
-            <tr>
-                <td colspan="3" style="padding: 1rem; text-align: center; color: var(--text-muted);">No new keys in this
-                    period.</td>
-            </tr>
-            {{end}}
-        </tbody>
-    </table>
+    <div>
+        <h3 style="font-size: 1.1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span style="color: #60a5fa;">🔑</span> Suspicious Public Keys
+        </h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Owner</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Fingerprint</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .AuditResults.Keys}}
+                <tr class="table-row">
+                    <td style="padding: 1.25rem 1rem; font-weight: 500;">{{.Username}}</td>
+                    <td style="padding: 1.25rem 1rem;">
+                        <code
+                            style="font-size: 0.8rem; background: #0b0f1a; padding: 0.3rem 0.6rem; border-radius: 6px; border: 1px solid var(--border); color: #94a3b8;">{{.Fingerprint}}</code>
+                    </td>
+                    <td
+                        style="padding: 1.25rem 1rem; color: var(--text-muted); font-size: 0.9rem; font-family: monospace;">
+                        {{.CreatedAt}}</td>
+                </tr>
+                {{else}}
+                <tr>
+                    <td colspan="3"
+                        style="padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.9rem;">No new
+                        keys found in this period.</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
     {{end}}
 </div>
+
+<style>
+    .table-row {
+        border-bottom: 1px solid var(--border);
+        transition: var(--transition);
+    }
+
+    .table-row:hover {
+        background: rgba(255, 255, 255, 0.02);
+    }
+</style>
 {{end}}

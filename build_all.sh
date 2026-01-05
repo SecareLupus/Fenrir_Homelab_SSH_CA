@@ -13,6 +13,10 @@ go build -o bin/ssh-ca-agent ./cmd/agent
 echo "--- Building Desktop App (GUI) ---"
 go build -o bin/ssh-ca-gui ./cmd/client-gui
 
+echo "--- Building PAM Module ---"
+# Requires libpam0g-dev on the system
+go build -buildmode=c-shared -o bin/pam_ssh_ca.so ./cmd/pam-ssh-ca
+
 echo ""
 echo "--- Cross-Compiling for Fleet (arm64) ---"
 GOOS=linux GOARCH=arm64 go build -o bin/ssh-ca-agent-arm64 ./cmd/agent

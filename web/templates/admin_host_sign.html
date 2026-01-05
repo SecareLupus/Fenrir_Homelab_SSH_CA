@@ -1,31 +1,113 @@
 {{define "content"}}
-<div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-        <h2 style="margin: 0;">Sign Host Certificate</h2>
-        <a href="/" class="btn-secondary" style="text-decoration: none; font-size: 0.9rem;">&larr; Dashboard</a>
+<div class="card" style="max-width: 800px; margin: 0 auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+        <div>
+            <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">Sign Host Certificate</h2>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Issue certificates to trust
+                your server infrastructure.</p>
+        </div>
+        <a href="/" class="btn-secondary">&larr; Dashboard</a>
     </div>
 
-    <p style="color: var(--text-muted); margin-bottom: 2rem;">
-        Use this to sign the public key of a server (usually <code>/etc/ssh/ssh_host_ed25519_key.pub</code>).
-        This allows clients to trust the server without seeing the "identity unknown" prompt.
-    </p>
+    <div
+        style="background: rgba(59, 130, 246, 0.1); border-left: 4px solid var(--primary); padding: 1.25rem; margin-bottom: 2.5rem; border-radius: 0 8px 8px 0;">
+        <p style="margin: 0; font-size: 0.9rem; color: #94a3b8; line-height: 1.6;">
+            Sign the public key of a server (usually <code>/etc/ssh/ssh_host_ed25519_key.pub</code>).
+            This allows clients to trust the server automatically, eliminating the "identity unknown" warning.
+        </p>
+    </div>
 
     <form action="/admin/hosts/sign" method="POST">
         <label for="hostname">Primary Hostname (Principals)</label>
-        <input type="text" id="hostname" name="hostname" placeholder="server.homelab.local" required>
+        <input type="text" id="hostname" name="hostname" placeholder="e.g. server.homelab.local" required>
 
         <label for="pubkey">Host Public Key</label>
-        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
-            required></textarea>
+        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3..." required
+            style="font-family: monospace; font-size: 0.85rem;"></textarea>
 
-        <label for="ttl">Validity</label>
+        <label for="ttl">Certificate Validity</label>
         <select id="ttl" name="ttl">
-            <option value="31536000">1 Year (Standard)</option>
-            <option value="63072000">2 Years</option>
-            <option value="86400">24 Hours (Test)</option>
+            <option value="31536000">Standard (1 Year)</option>
+            <option value="63072000">Extended (2 Years)</option>
+            <option value="86400">Testing (24 Hours)</option>
         </select>
 
-        <button type="submit" style="margin-top: 1rem;">Sign Host Key</button>
+        <button type="submit">Sign Host Key</button>
     </form>
 </div>
+
+<div class="card" style="margin-top: 2rem;">
+    <h2 style="font-size: 1.25rem; margin-bottom: 1.5rem;">Registered Hosts (Auto-Renew)</h2>
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Hostname</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Fingerprint</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Auto-Renew</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); text-align: right;">
+                        Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Hosts}}
+                <tr class="table-row">
+                    <td style="padding: 1.25rem 1rem; font-weight: 500;">{{.Hostname}}</td>
+                    <td style="padding: 1.25rem 1rem;">
+                        <code style="font-size: 0.75rem; color: var(--text-muted);">{{.Fingerprint}}</code>
+                    </td>
+                    <td style="padding: 1.25rem 1rem;">
+                        {{if .HasAPIKey}}
+                        <span style="color: var(--success); font-size: 0.85rem; font-weight: 600;">Enabled</span>
+                        {{else}}
+                        <span style="color: var(--text-muted); font-size: 0.85rem;">Disabled</span>
+                        {{end}}
+                    </td>
+                    <td style="padding: 1.25rem 1rem; text-align: right;">
+                        <form action="/admin/hosts/apikey" method="POST" style="display: inline;">
+                            <input type="hidden" name="hostname" value="{{.Hostname}}">
+                            <button type="submit" class="btn-action">
+                                {{if .HasAPIKey}}Regenerate Key{{else}}Enable Auto-Renew{{end}}
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .table-row {
+        border-bottom: 1px solid var(--border);
+        transition: var(--transition);
+    }
+
+    .table-row:hover {
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .btn-action {
+        width: auto;
+        padding: 0.4rem 0.8rem;
+        font-size: 0.75rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border);
+        color: var(--text);
+        margin: 0;
+    }
+
+    .btn-action:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: #4a5568;
+    }
+</style>
 {{end}}
