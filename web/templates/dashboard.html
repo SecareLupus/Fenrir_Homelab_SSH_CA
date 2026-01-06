@@ -22,9 +22,20 @@
         </div>
         {{end}}
     </div>
-    <form action="/cert/request" method="POST">
+    <form id="cert-form" action="/cert/request" method="POST">
         <label for="pubkey">SSH Public Key</label>
-        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3..."></textarea>
+        <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3..." required></textarea>
+
+        <label for="principals">Principals (Optional)</label>
+        <input type="text" id="principals" name="principals"
+            placeholder="{{if .IsAdmin}}e.g. admin,pi,root{{else}}pi by default{{end}}" {{if not .IsAdmin}}readonly
+            value="{{.User}}" {{end}} {{if not .IsAdmin}}style="background: rgba(255,255,255,0.02);"
+            {{else}}style="background: var(--bg);" {{end}}>
+        {{if .IsAdmin}}
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: -0.75rem; margin-bottom: 1rem;">
+            Comma-separated list of usernames this certificate can log in as.
+        </p>
+        {{end}}
 
         <label for="ttl">Validity Duration</label>
         <select id="ttl" name="ttl">
@@ -33,8 +44,25 @@
             <option value="86400">Long-lived (24 Hours)</option>
         </select>
 
-        <button type="submit">Sign Certificate</button>
+        <button type="submit" id="sign-btn">Sign Certificate</button>
     </form>
+</div>
+
+<div id="cert-result" class="card"
+    style="display: none; border-color: var(--success); background: rgba(16, 185, 129, 0.05);">
+    <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem; color: var(--success);">Signed Certificate</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Your certificate has been signed
+        successfully. Copy the content below or download the file.</p>
+
+    <label>Certificate Content</label>
+    <textarea id="signed-cert" rows="6" readonly onclick="this.select()"
+        style="font-family: monospace; font-size: 0.8rem; background: #0b0f1a; border-color: rgba(16, 185, 129, 0.3);"></textarea>
+
+    <div style="display: flex; gap: 1rem;">
+        <button id="download-btn" style="background: var(--success); flex: 1;">Download .pub file</button>
+        <button onclick="document.getElementById('cert-result').style.display='none'"
+            style="background: transparent; border: 1px solid var(--border); width: auto; padding: 0 1.5rem;">Close</button>
+    </div>
 </div>
 
 <div class="card">
@@ -62,7 +90,8 @@
 <div class="card">
     <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">Server Setup (sshd_config)</h2>
     <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Configure
-        <code>/etc/ssh/sshd_config</code> to trust user certificates.</p>
+        <code>/etc/ssh/sshd_config</code> to trust user certificates.
+    </p>
     <pre
         style="background: #0b0f1a; padding: 1.25rem; border-radius: 8px; border: 1px solid var(--border); overflow-x: auto; font-size: 0.85rem; color: #94a3b8; line-height: 1.6;">
 # 1. Trust users signed by this CA
@@ -71,7 +100,8 @@ TrustedUserCAKeys /etc/ssh/user_ca.pub
 # 2. (Recommended) Set your host certificate
 HostCertificate /etc/ssh/ssh_host_ed25519-cert.pub</pre>
     <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 1rem;">Save the <b>User CA Key</b> to
-        <code>/etc/ssh/user_ca.pub</code> and restart sshd.</p>
+        <code>/etc/ssh/user_ca.pub</code> and restart sshd.
+    </p>
 </div>
 
 <div class="card">
@@ -95,4 +125,52 @@ HostCertificate /etc/ssh/ssh_host_ed25519-cert.pub</pre>
             Key</button>
     </form>
 </div>
+
+<script>
+    document.getElementById('cert-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const btn = document.getElementById('sign-btn');
+        const originalText = btn.innerText;
+
+        btn.disabled = true;
+        btn.innerText = 'Signing...';
+
+        const formData = new FormData(form);
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                alert('Error: ' + error);
+                return;
+            }
+
+            const cert = await response.text();
+            document.getElementById('signed-cert').value = cert;
+            document.getElementById('cert-result').style.display = 'block';
+            document.getElementById('cert-result').scrollIntoView({ behavior: 'smooth' });
+
+            // Setup download
+            const blob = new Blob([cert], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const downloadBtn = document.getElementById('download-btn');
+            downloadBtn.onclick = () => {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'id_ed25519-cert.pub';
+                a.click();
+            };
+        } catch (err) {
+            alert('Network error: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
+    });
+</script>
 {{end}}

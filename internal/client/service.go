@@ -79,8 +79,7 @@ func (c *Config) GetIdentity() (*Identity, error) {
 
 // Sign handles the full enrollment or renewal flow
 func (c *Config) Sign(ctx context.Context, onChallenge func(string)) error {
-	id, err := c.GetIdentity()
-	if err != nil {
+	if _, err := c.GetIdentity(); err != nil {
 		return err
 	}
 

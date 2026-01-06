@@ -1,0 +1,13 @@
+.git
+deploy/
+data/
+*.db
+*.db-journal
+ssh-ca-server
+ssh-ca-agent
+bin/
+tmp/
+.vscode/
+.idea/
+.antigravity/
+.gemini/

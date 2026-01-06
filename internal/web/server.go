@@ -153,16 +153,18 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Success - Set Session Cookie
-	s.setSession(w, username)
+	s.setSession(w, r, username)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (s *Server) setSession(w http.ResponseWriter, username string) {
+func (s *Server) setSession(w http.ResponseWriter, r *http.Request, username string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_user",
 		Value:    username,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   r.TLS != nil, // Set secure if HTTPS
+		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(24 * time.Hour),
 	})
 }
@@ -306,30 +308,30 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 	isNewKey := false
 
 	// 2. Authentication Decision
-	apiKey := r.Header.Get("X-API-Key")
-	if apiKey != "" {
-		// Enrollment path
-		hash := auth.HashAPIKey(apiKey)
-		var err error
-		username, err = s.db.GetUserByAPIKey(hash)
-		if err != nil {
-			http.Error(w, "Invalid API Key", 401)
-			return
+	// Priority 1: Active Web Session or API Key in Header
+	username = s.authenticate(r)
+	if username != "" {
+		// Verify ownership: key must be either new or owned by this user
+		owner, err := s.db.CheckPublicKeyOwnership(fingerprint)
+		if err == nil {
+			if owner != username {
+				http.Error(w, "Public key is registered to another user", 403)
+				return
+			}
+		} else {
+			// Key not registered, this will be an auto-enrollment
+			isNewKey = true
 		}
-		isNewKey = true
 	} else {
-		// Renewal path via PoP
+		// Priority 2: Extension/CLI Renewal via PoP (Proof of Possession)
 		owner, err := s.db.CheckPublicKeyOwnership(fingerprint)
 		if err != nil {
-			http.Error(w, "Key not enrolled. API Key required for initial setup.", 401)
+			log.Printf("Unauthenticated enrollment attempt for key %s", fingerprint)
+			http.Error(w, "Key not enrolled. Please login or provide an API Key.", 401)
 			return
 		}
-		if !s.db.IsUserEnabled(owner) {
-			http.Error(w, "User account disabled", 403)
-			return
-		}
+		
 		username = owner
-
 		ok, _ := s.verifyPoP(w, r, pubKey)
 		if !ok {
 			return
@@ -339,10 +341,39 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 		s.db.LogEvent(&uid, "cert_renew_pop", fingerprint)
 	}
 
+	// 2.5 Extract and validate Principals
+	principalsStr := r.FormValue("principals")
+	principals := []string{username, "pi"} // Default for all users
+
+	// Logic: Admins can override, normal users are restricted for safety
+	if username == "admin" && principalsStr != "" {
+		parts := strings.Split(principalsStr, ",")
+		var cleanParts []string
+		for _, p := range parts {
+			trimmed := strings.TrimSpace(p)
+			if trimmed != "" {
+				cleanParts = append(cleanParts, trimmed)
+			}
+		}
+		if len(cleanParts) > 0 {
+			principals = cleanParts
+		}
+	}
+
+	// Double check user is still enabled
+	if !s.db.IsUserEnabled(username) {
+		http.Error(w, "User account disabled", 403)
+		return
+	}
+
 	// 3. Register Key if new
 	if isNewKey {
 		uid, _ := s.db.GetUserID(username)
-		s.db.RegisterPublicKey(uid, fingerprint, pubKey.Type(), pubKeyStr, "Enrolled via CLI")
+		comment := "Enrolled via WebUI"
+		if r.Header.Get("X-API-Key") != "" {
+			comment = "Enrolled via API"
+		}
+		s.db.RegisterPublicKey(uid, fingerprint, pubKey.Type(), pubKeyStr, comment)
 		s.db.LogEvent(&uid, "key_enrolled", fingerprint)
 	}
 
@@ -355,7 +386,6 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 		ttl = 86400
 	}
 
-	principals := []string{username}
 	cert, err := s.ca.SignUserCertificate(pubKey, username, principals, ttl)
 	if err != nil {
 		http.Error(w, "Signing failed", 500)
@@ -556,7 +586,19 @@ func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 		ttl = 31536000
 	} // Default 1 year for hosts
 
-	principals := []string{hostname}
+	// Parse principals from comma-separated hostname field
+	parts := strings.Split(hostname, ",")
+	var principals []string
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			principals = append(principals, trimmed)
+		}
+	}
+	if len(principals) == 0 {
+		principals = []string{hostname}
+	}
+
 	cert, err := s.ca.SignHostCertificate(pubKey, hostname, principals, ttl)
 	if err != nil {
 		http.Error(w, "Signing failed", 500)
@@ -685,7 +727,7 @@ func (s *Server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 	if valid {
 		// Clear pending cookie
 		http.SetCookie(w, &http.Cookie{Name: "mfa_pending_user", MaxAge: -1, Path: "/"})
-		s.setSession(w, username)
+		s.setSession(w, r, username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
 		s.renderPage(w, "login_mfa.html", map[string]any{"User": username, "Error": "Invalid MFA code or backup code"})

@@ -18,8 +18,9 @@
     </div>
 
     <form action="/admin/hosts/sign" method="POST">
-        <label for="hostname">Primary Hostname (Principals)</label>
-        <input type="text" id="hostname" name="hostname" placeholder="e.g. server.homelab.local" required>
+        <label for="hostname">Host Principals (Comma-separated)</label>
+        <input type="text" id="hostname" name="hostname"
+            placeholder="e.g. server.local, server.homelab.local, 192.168.1.50" required>
 
         <label for="pubkey">Host Public Key</label>
         <textarea id="pubkey" name="pubkey" rows="4" placeholder="ssh-ed25519 AAAAC3..." required
