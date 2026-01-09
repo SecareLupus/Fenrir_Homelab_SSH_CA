@@ -27,6 +27,9 @@
                         style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
                         Status</th>
                     <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Max TTL (sec)</th>
+                    <th
                         style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); text-align: right;">
                         Actions</th>
                 </tr>
@@ -52,6 +55,17 @@
                             Disabled
                         </span>
                         {{end}}
+                    </td>
+                    <td style="padding: 1.25rem 1rem;">
+                        <form action="/admin/users/ttl" method="POST"
+                            style="display: flex; gap: 0.5rem; margin: 0; align-items: center;">
+                            <input type="hidden" name="username" value="{{.Username}}">
+                            <input type="number" name="ttl" value="{{if .MaxTTL}}{{.MaxTTL}}{{end}}"
+                                placeholder="Default"
+                                style="width: 100px; margin-bottom: 0; padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                            <button type="submit" class="btn-action"
+                                style="padding: 0.4rem 0.6rem; background: var(--surface); border: 1px solid var(--border);">Save</button>
+                        </form>
                     </td>
                     <td style="padding: 1.25rem 1rem; text-align: right;">
                         {{if ne .Username "admin"}}

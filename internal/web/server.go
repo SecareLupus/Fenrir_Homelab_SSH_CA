@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"ssh-ca/internal/auth"
@@ -31,6 +32,10 @@ type Server struct {
 	tmpl *template.Template
 	// challenges stores active PoP challenges: fingerprint -> {challenge, expiry}
 	challenges map[string]challenge
+
+	// Metrics
+	metricUserCertsSigned uint64
+	metricHostCertsSigned uint64
 }
 
 type challenge struct {
@@ -88,11 +93,22 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/admin/revoke", s.handleAdminRevoke)
 	s.mux.HandleFunc("/admin/offline", s.handleAdminOffline)
 	s.mux.HandleFunc("/admin/offline/sign", s.handleAdminOfflineSign)
+	s.mux.HandleFunc("/admin/hosts", s.handleAdminHosts)
+	s.mux.HandleFunc("/admin/hosts/delete", s.handleAdminHostsDelete)
+	s.mux.HandleFunc("/admin/groups", s.handleAdminGroups)
+	s.mux.HandleFunc("/admin/groups/create", s.handleAdminGroupsCreate)
+	s.mux.HandleFunc("/admin/groups/delete", s.handleAdminGroupsDelete)
+	s.mux.HandleFunc("/admin/groups/members/toggle", s.handleAdminGroupsMemberToggle)
+	s.mux.HandleFunc("/admin/groups/ttl", s.handleAdminGroupsTTL)
+	s.mux.HandleFunc("/admin/users/ttl", s.handleAdminUsersTTL)
 	s.mux.HandleFunc("/krl", s.handleKRL)
 	s.mux.HandleFunc("/api/v1/ca/user", s.handleAPIUserCA)
 	s.mux.HandleFunc("/api/v1/ca/host", s.handleAPIHostCA)
 	s.mux.HandleFunc("/api/v1/host/renew", s.handleAPIHostRenew)
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
+	s.mux.HandleFunc("/metrics", s.handleMetrics)
+	s.mux.HandleFunc("/docs", s.handleDocs)
+	s.mux.HandleFunc("/docs/openapi.yaml", s.handleOpenAPI)
 }
 
 func (s *Server) Start() error {
@@ -125,6 +141,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			hash, _ := auth.HashPassword(password)
 			if err := s.db.CreateUser("admin", hash); err == nil {
 				// Created successfully, proceed to login
+				_ = s.db.SetUserEnabled("admin", true) // Ensure enabled
+				// We don't need to explicitly set role as 'admin' here because
+				// the DB schema defaults to 'user', let's fix that check or set it.
+				// Actually, let's just make sure admin has admin role.
+				// The schema migration adds role 'user' by default.
+				// Let's explicitly set it for bootstrap.
+				_, _ = s.db.Exec("UPDATE users SET role = 'admin' WHERE username = 'admin'")
 				log.Printf("Bootstrapped admin user")
 			}
 		}
@@ -200,6 +223,17 @@ func (s *Server) authenticate(r *http.Request) string {
 	return ""
 }
 
+func (s *Server) isAdmin(username string) bool {
+	if username == "" {
+		return false
+	}
+	role, err := s.db.GetUserRole(username)
+	if err != nil {
+		return false
+	}
+	return role == "admin"
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -217,7 +251,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"User":      username,
-		"IsAdmin":   username == "admin", // MVP: hardcoded admin
+		"IsAdmin":   s.isAdmin(username),
 		"UserCAKey": string(userCA),
 		"HostCAKey": string(hostCA),
 		"Mode":      s.cfg.Mode,
@@ -227,7 +261,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminOffline(w http.ResponseWriter, r *http.Request) {
 	username := s.authenticate(r)
-	if username != "admin" {
+	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -251,7 +285,7 @@ func (s *Server) handleAdminOfflineSign(w http.ResponseWriter, r *http.Request) 
 	}
 
 	username := s.authenticate(r)
-	if username != "admin" {
+	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -286,7 +320,6 @@ func (s *Server) handleAdminOfflineSign(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Write(ssh.MarshalAuthorizedKey(cert))
 }
-
 
 func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -330,7 +363,7 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Key not enrolled. Please login or provide an API Key.", 401)
 			return
 		}
-		
+
 		username = owner
 		ok, _ := s.verifyPoP(w, r, pubKey)
 		if !ok {
@@ -343,10 +376,14 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 
 	// 2.5 Extract and validate Principals
 	principalsStr := r.FormValue("principals")
-	principals := []string{username, "pi"} // Default for all users
+
+	// Default principals: username + "pi" + all user's groups
+	principals := []string{username, "pi"}
+	groups, _ := s.db.GetUserGroups(username)
+	principals = append(principals, groups...)
 
 	// Logic: Admins can override, normal users are restricted for safety
-	if username == "admin" && principalsStr != "" {
+	if s.isAdmin(username) && principalsStr != "" {
 		parts := strings.Split(principalsStr, ",")
 		var cleanParts []string
 		for _, p := range parts {
@@ -382,6 +419,13 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 	if ttl == 0 {
 		ttl = 3600
 	}
+
+	// Resolve Policy Max TTL
+	maxTTL, _ := s.db.GetMaxTTL(username)
+	if maxTTL > 0 && uint64(maxTTL) < ttl {
+		ttl = uint64(maxTTL)
+	}
+
 	if ttl > 86400 {
 		ttl = 86400
 	}
@@ -436,7 +480,7 @@ func (s *Server) handleAPIKeyGenerate(w http.ResponseWriter, r *http.Request) {
 	// Properly, this should be a flash message or a specific "key created" view.
 	s.renderPage(w, "dashboard.html", map[string]any{
 		"User":      username,
-		"IsAdmin":   username == "admin",
+		"IsAdmin":   s.isAdmin(username),
 		"NewAPIKey": apiKey,
 		"UserCAKey": string(ssh.MarshalAuthorizedKey(s.ca.GetUserCAPublicKey())),
 		"HostCAKey": string(ssh.MarshalAuthorizedKey(s.ca.GetHostCAPublicKey())),
@@ -460,7 +504,7 @@ func (s *Server) renderPage(w http.ResponseWriter, page string, data any) {
 
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	username := s.authenticate(r)
-	if username != "admin" { // MVP: only 'admin' is admin
+	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -484,7 +528,7 @@ func (s *Server) handleAdminUserToggle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	admin := s.authenticate(r)
-	if admin != "admin" {
+	if !s.isAdmin(admin) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -508,7 +552,7 @@ func (s *Server) handleAdminUserToggle(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request) {
 	username := s.authenticate(r)
-	if username != "admin" {
+	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -527,7 +571,7 @@ func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminAuditIdentity(w http.ResponseWriter, r *http.Request) {
 	username := s.authenticate(r)
-	if username != "admin" {
+	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -552,7 +596,7 @@ func (s *Server) handleAdminAuditIdentity(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 	username := s.authenticate(r)
-	if username != "admin" {
+	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -616,7 +660,7 @@ func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAdminHostAPIKey(w http.ResponseWriter, r *http.Request) {
 	username := s.authenticate(r)
-	if username != "admin" {
+	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -660,7 +704,7 @@ func (s *Server) handleAdminRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := s.authenticate(r)
-	if username != "admin" {
+	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
@@ -680,6 +724,176 @@ func (s *Server) handleAdminRevoke(w http.ResponseWriter, r *http.Request) {
 	s.db.LogEvent(&uid, "key_revoked", fingerprint)
 
 	http.Redirect(w, r, "/admin/audit", http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
+	username := s.authenticate(r)
+	if !s.isAdmin(username) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	groups, err := s.db.ListGroups()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	users, _ := s.db.ListUsers()
+
+	// Build a map of group name -> members for easier rendering
+	groupMembers := make(map[string][]string)
+	for _, g := range groups {
+		// This is a bit inefficient (N queries), but fine for small homelab scale
+		members, _ := s.db.GetUserGroupsByGroupName(g.Name)
+		groupMembers[g.Name] = members
+	}
+
+	s.renderPage(w, "admin_groups.html", map[string]any{
+		"User":         username,
+		"Groups":       groups,
+		"Users":        users,
+		"GroupMembers": groupMembers,
+	})
+}
+
+func (s *Server) handleAdminGroupsCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+		return
+	}
+
+	admin := s.authenticate(r)
+	if !s.isAdmin(admin) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	name := r.FormValue("name")
+	desc := r.FormValue("description")
+
+	if err := s.db.CreateGroup(name, desc); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(admin)
+	s.db.LogEvent(&uid, "group_created", name)
+
+	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminGroupsDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+		return
+	}
+
+	admin := s.authenticate(r)
+	if !s.isAdmin(admin) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	name := r.FormValue("name")
+
+	if err := s.db.DeleteGroup(name); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(admin)
+	s.db.LogEvent(&uid, "group_deleted", name)
+
+	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminGroupsMemberToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+		return
+	}
+
+	admin := s.authenticate(r)
+	if !s.isAdmin(admin) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	username := r.FormValue("username")
+	groupName := r.FormValue("group")
+	action := r.FormValue("action") // "add" or "remove"
+
+	var err error
+	if action == "add" {
+		err = s.db.AddUserToGroup(username, groupName)
+	} else {
+		err = s.db.RemoveUserFromGroup(username, groupName)
+	}
+
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(admin)
+	s.db.LogEvent(&uid, "group_membership_updated", fmt.Sprintf("%s:%s:%s", groupName, username, action))
+
+	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminGroupsTTL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+		return
+	}
+
+	admin := s.authenticate(r)
+	if !s.isAdmin(admin) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	name := r.FormValue("name")
+	ttlStr := r.FormValue("ttl")
+	ttl, _ := strconv.Atoi(ttlStr)
+
+	if err := s.db.SetGroupMaxTTL(name, ttl); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(admin)
+	s.db.LogEvent(&uid, "group_ttl_updated", fmt.Sprintf("%s:%d", name, ttl))
+
+	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminUsersTTL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+		return
+	}
+
+	admin := s.authenticate(r)
+	if !s.isAdmin(admin) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	username := r.FormValue("username")
+	ttlStr := r.FormValue("ttl")
+	ttl, _ := strconv.Atoi(ttlStr)
+
+	if err := s.db.SetUserMaxTTL(username, ttl); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(admin)
+	s.db.LogEvent(&uid, "user_ttl_updated", fmt.Sprintf("%s:%d", username, ttl))
+
+	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
 func (s *Server) handleKRL(w http.ResponseWriter, r *http.Request) {
@@ -828,6 +1042,49 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	fmt.Fprintf(w, "# HELP ssh_ca_user_certs_signed_total Total number of user certificates signed\n")
+	fmt.Fprintf(w, "# TYPE ssh_ca_user_certs_signed_total counter\n")
+	fmt.Fprintf(w, "ssh_ca_user_certs_signed_total %d\n", atomic.LoadUint64(&s.metricUserCertsSigned))
+
+	fmt.Fprintf(w, "# HELP ssh_ca_host_certs_signed_total Total number of host certificates signed\n")
+	fmt.Fprintf(w, "# TYPE ssh_ca_host_certs_signed_total counter\n")
+	fmt.Fprintf(w, "ssh_ca_host_certs_signed_total %d\n", atomic.LoadUint64(&s.metricHostCertsSigned))
+}
+
+func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "docs/openapi.yaml")
+}
+
+func (s *Server) handleDocs(w http.ResponseWriter, r *http.Request) {
+	html := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="SSH CA API Documentation" />
+  <title>SSH CA | API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js" crossorigin></script>
+  <script>
+    window.onload = () => {
+      window.ui = SwaggerUIBundle({
+        url: '/docs/openapi.yaml',
+        dom_id: '#swagger-ui',
+      });
+    };
+  </script>
+</body>
+</html>`
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(html))
+}
+
 func (s *Server) handleAPIHostRenew(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method not allowed", 405)
@@ -857,6 +1114,7 @@ func (s *Server) handleAPIHostRenew(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unauthorized (Invalid API Key)", 401)
 			return
 		}
+		s.db.UpdateHostLastSeen(hostname)
 	} else {
 		// Attempt PoP renewal
 		var err error
@@ -870,6 +1128,7 @@ func (s *Server) handleAPIHostRenew(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		s.db.UpdateHostLastSeen(hostname)
 	}
 
 	// Sign the host key
@@ -880,6 +1139,8 @@ func (s *Server) handleAPIHostRenew(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error during signing", 500)
 		return
 	}
+
+	atomic.AddUint64(&s.metricHostCertsSigned, 1)
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(ssh.MarshalAuthorizedKey(cert))
@@ -958,4 +1219,48 @@ func (s *Server) checkHardenedAuth(w http.ResponseWriter, r *http.Request) bool 
 
 	http.Error(w, "Unauthorized (Hardened Trust Sync enabled)", 401)
 	return false
+}
+
+func (s *Server) handleAdminHosts(w http.ResponseWriter, r *http.Request) {
+	username := s.authenticate(r)
+	if !s.isAdmin(username) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	hosts, err := s.db.ListHosts()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	s.renderPage(w, "admin_hosts.html", map[string]any{
+		"User":    username,
+		"IsAdmin": true,
+		"Hosts":   hosts,
+	})
+}
+
+func (s *Server) handleAdminHostsDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/admin/hosts", http.StatusSeeOther)
+		return
+	}
+
+	admin := s.authenticate(r)
+	if !s.isAdmin(admin) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	hostname := r.FormValue("hostname")
+	if err := s.db.DeleteHost(hostname); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(admin)
+	s.db.LogEvent(&uid, "host_deleted", hostname)
+
+	http.Redirect(w, r, "/admin/hosts", http.StatusSeeOther)
 }

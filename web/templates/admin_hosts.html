@@ -1,0 +1,116 @@
+{{define "content"}}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+        <div>
+            <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">Host Inventory</h2>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">View and manage registered
+                servers in your fleet.</p>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+            <a href="/admin/hosts/sign" class="btn-secondary">Host Signing</a>
+            <a href="/" class="btn-secondary">&larr; Dashboard</a>
+        </div>
+    </div>
+
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Hostname</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Fingerprint</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Auth</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">
+                        Last Sync</th>
+                    <th
+                        style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); text-align: right;">
+                        Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Hosts}}
+                <tr class="table-row">
+                    <td style="padding: 1.25rem 1rem; font-weight: 500;">{{.Hostname}}</td>
+                    <td
+                        style="padding: 1.25rem 1rem; font-family: monospace; font-size: 0.8rem; color: var(--text-muted);">
+                        {{.Fingerprint}}
+                    </td>
+                    <td style="padding: 1.25rem 1rem;">
+                        {{if .HasAPIKey}}
+                        <span class="badge"
+                            style="background: rgba(59, 130, 246, 0.1); color: var(--primary); border: 1px solid rgba(59, 130, 246, 0.2);">API
+                            Key</span>
+                        {{else}}
+                        <span class="badge">PoP</span>
+                        {{end}}
+                    </td>
+                    <td style="padding: 1.25rem 1rem; font-size: 0.9rem;">
+                        {{if .LastSeen}}
+                        <span title="{{.LastSeen.Format " 2006-01-02 15:04:05"}}">
+                            {{.LastSeen.Format "Jan 02, 15:04"}}
+                        </span>
+                        {{else}}
+                        <span style="color: var(--text-muted); font-style: italic;">Never</span>
+                        {{end}}
+                    </td>
+                    <td style="padding: 1.25rem 1rem; text-align: right;">
+                        <form action="/admin/hosts/delete" method="POST"
+                            onsubmit="return confirm('Delete host {{.Hostname}}? This will prevent automated renewals.')"
+                            style="display: inline;">
+                            <input type="hidden" name="hostname" value="{{.Hostname}}">
+                            <button type="submit" class="btn-action btn-disable"
+                                style="border: none; background: none; color: var(--error); cursor: pointer;">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {{else}}
+                <tr>
+                    <td colspan="5" style="padding: 3rem; text-align: center; color: var(--text-muted);">
+                        No hosts registered yet.
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+
+    <div style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border);">
+        <h3 style="margin-top: 0; font-size: 1.1rem;">Fleet Onboarding</h3>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">Use the bootstrap script to quickly join new servers to
+            your fleet.</p>
+        <code
+            style="display: block; background: #1a2236; padding: 1rem; border-radius: 8px; font-size: 0.85rem; border: 1px solid var(--border); color: #60a5fa;">
+            curl -sSL {{.CAURL}}/static/scripts/bootstrap.sh | sudo bash
+        </code>
+    </div>
+</div>
+
+<style>
+    .table-row {
+        border-bottom: 1px solid var(--border);
+        transition: var(--transition);
+    }
+
+    .table-row:hover {
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+        background: #1e293b;
+        border: 1px solid var(--border);
+        padding: 0.25rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #94a3b8;
+    }
+</style>
+{{end}}

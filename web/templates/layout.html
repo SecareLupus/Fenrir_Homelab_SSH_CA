@@ -204,6 +204,35 @@
         {{end}}
     </header>
     <main>
+        {{if .User}}
+        <nav
+            style="margin-bottom: 2.5rem; display: flex; gap: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+            <a href="/"
+                style="color: var(--text); text-decoration: none; font-size: 0.9rem; font-weight: 500; opacity: 0.8; transition: var(--transition);"
+                onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8">Dashboard</a>
+            {{if .IsAdmin}}
+            <a href="/admin/users"
+                style="color: var(--text); text-decoration: none; font-size: 0.9rem; font-weight: 500; opacity: 0.8; transition: var(--transition);"
+                onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8">Users</a>
+            <a href="/admin/groups"
+                style="color: var(--text); text-decoration: none; font-size: 0.9rem; font-weight: 500; opacity: 0.8; transition: var(--transition);"
+                onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8">Groups</a>
+            <a href="/admin/hosts"
+                style="color: var(--text); text-decoration: none; font-size: 0.9rem; font-weight: 500; opacity: 0.8; transition: var(--transition);"
+                onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8">Hosts</a>
+            <a href="/admin/audit"
+                style="color: var(--text); text-decoration: none; font-size: 0.9rem; font-weight: 500; opacity: 0.8; transition: var(--transition);"
+                onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8">Audit Logs</a>
+            <a href="/admin/hosts/sign"
+                style="color: var(--text); text-decoration: none; font-size: 0.9rem; font-weight: 500; opacity: 0.8; transition: var(--transition);"
+                onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8">Host Signing</a>
+            <a href="/docs"
+                style="color: var(--text); text-decoration: none; font-size: 0.9rem; font-weight: 500; opacity: 0.8; transition: var(--transition);"
+                onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.8">Docs</a>
+            {{end}}
+        </nav>
+        {{end}}
+
         {{if .Error}}
         <div class="flash">{{.Error}}</div>
         {{end}}

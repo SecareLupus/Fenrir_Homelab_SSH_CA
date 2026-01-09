@@ -1,0 +1,156 @@
+openapi: 3.0.3
+info:
+  title: Homelab SSH CA API
+  description: API for managing SSH certificates, users, and groups in a Homelab environment.
+  version: 1.0.0
+servers:
+  - url: /
+    description: Local Server
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Health Check
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+
+  /api/v1/ca/user:
+    get:
+      summary: Get User CA Public Key
+      responses:
+        '200':
+          description: User CA Public Key in authorized_keys format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/ca/host:
+    get:
+      summary: Get Host CA Public Key
+      responses:
+        '200':
+          description: Host CA Public Key in authorized_keys format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /krl:
+    get:
+      summary: Get Key Revocation List (KRL)
+      responses:
+        '200':
+          description: KRL in binary formats
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /cert/request:
+    post:
+      summary: Request User Certificate
+      security:
+        - CookieAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                pubkey:
+                  type: string
+                  description: SSH public key to sign
+                ttl:
+                  type: integer
+                  description: Requested TTL in seconds (subject to policy)
+                principals:
+                  type: string
+                  description: Comma-separated principals (Admins only)
+              required:
+                - pubkey
+      responses:
+        '200':
+          description: Signed SSH Certificate
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/host/renew:
+    post:
+      summary: Renew Host Certificate
+      description: Supports both Host API Key and Proof-of-Possession (PoP) authentication.
+      security:
+        - HostApiKeyAuth: []
+        - PoPAuth: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                pubkey:
+                  type: string
+                  description: SSH public key to sign
+              required:
+                - pubkey
+      responses:
+        '200':
+          description: Signed Host Certificate
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Challenge required (for PoP)
+          headers:
+            X-SSH-Challenge:
+              schema:
+                type: string
+
+  /admin/users:
+    get:
+      summary: List Users (Admin Only)
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: HTML Page
+
+  /admin/groups:
+    get:
+      summary: List Groups (Admin Only)
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: HTML Page
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    HostApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Host-API-Key
+    PoPAuth:
+      type: apiKey
+      in: header
+      name: X-SSH-Signature
+      description: SSH signature for Proof-of-Possession

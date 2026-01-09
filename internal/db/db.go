@@ -105,6 +105,21 @@ func (d *DB) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
+
+	CREATE TABLE IF NOT EXISTS groups (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		description TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS user_groups (
+		user_id INTEGER NOT NULL,
+		group_id INTEGER NOT NULL,
+		PRIMARY KEY(user_id, group_id),
+		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+		FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
+	);
 	`
 	_, err := d.Exec(schema)
 	if err != nil {
@@ -116,7 +131,10 @@ func (d *DB) migrate() error {
 	_, _ = d.Exec("ALTER TABLE users ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
 	_, _ = d.Exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
 	_, _ = d.Exec("ALTER TABLE users ADD COLUMN mfa_secret TEXT")
+	_, _ = d.Exec("ALTER TABLE users ADD COLUMN max_ttl INTEGER")
+	_, _ = d.Exec("ALTER TABLE groups ADD COLUMN max_ttl INTEGER")
 	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN api_key_hash TEXT")
+	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN last_seen DATETIME")
 
 	return nil
 }
@@ -173,6 +191,7 @@ type User struct {
 	Role      string
 	Enabled   bool
 	MFASecret string
+	MaxTTL    int
 	CreatedAt time.Time
 }
 
@@ -189,7 +208,7 @@ func (d *DB) ListUsers() ([]User, error) {
 		var u User
 		var enabled int
 		var createdAt string
-		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &enabled, &u.MFASecret, &createdAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &enabled, &u.MFASecret, &u.MaxTTL, &createdAt); err != nil {
 			return nil, err
 		}
 		u.Enabled = enabled == 1
@@ -362,7 +381,13 @@ func (d *DB) GetHostByAPIKey(keyHash string) (string, error) {
 
 // SetHostAPIKey stores a hashed API key for a host
 func (d *DB) SetHostAPIKey(hostname, keyHash string) error {
-	_, err := d.Exec("UPDATE hosts SET api_key_hash = ? WHERE hostname = ?", keyHash, hostname)
+	_, err := d.Exec("UPDATE hosts SET api_key_hash = ?, last_seen = CURRENT_TIMESTAMP WHERE hostname = ?", keyHash, hostname)
+	return err
+}
+
+// UpdateHostLastSeen updates the last check-in time for a host
+func (d *DB) UpdateHostLastSeen(hostname string) error {
+	_, err := d.Exec("UPDATE hosts SET last_seen = CURRENT_TIMESTAMP WHERE hostname = ?", hostname)
 	return err
 }
 
@@ -378,12 +403,18 @@ type Host struct {
 	Hostname    string
 	Fingerprint string
 	HasAPIKey   bool
-	CreatedAt   string
+	LastSeen    *time.Time
+	CreatedAt   time.Time
 }
 
 // ListHosts returns all registered hosts
 func (d *DB) ListHosts() ([]Host, error) {
-	rows, err := d.Query("SELECT id, hostname, fingerprint, (api_key_hash IS NOT NULL), created_at FROM hosts")
+	query := `
+		SELECT id, hostname, fingerprint, (api_key_hash IS NOT NULL), last_seen, created_at 
+		FROM hosts 
+		ORDER BY hostname ASC
+	`
+	rows, err := d.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -392,12 +423,25 @@ func (d *DB) ListHosts() ([]Host, error) {
 	var hosts []Host
 	for rows.Next() {
 		var h Host
-		if err := rows.Scan(&h.ID, &h.Hostname, &h.Fingerprint, &h.HasAPIKey, &h.CreatedAt); err != nil {
+		var lastSeen sql.NullString
+		var createdAt string
+		if err := rows.Scan(&h.ID, &h.Hostname, &h.Fingerprint, &h.HasAPIKey, &lastSeen, &createdAt); err != nil {
 			return nil, err
 		}
+		if lastSeen.Valid {
+			t, _ := time.Parse("2006-01-02 15:04:05", lastSeen.String)
+			h.LastSeen = &t
+		}
+		h.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
 		hosts = append(hosts, h)
 	}
 	return hosts, nil
+}
+
+// DeleteHost removes a host from the inventory
+func (d *DB) DeleteHost(hostname string) error {
+	_, err := d.Exec("DELETE FROM hosts WHERE hostname = ?", hostname)
+	return err
 }
 
 // RegisterPublicKey associates a public key with a user
@@ -505,6 +549,184 @@ func (d *DB) StoreCertificate(serial uint64, fingerprint, certType, principals s
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, serial, fingerprint, certType, principals, validFrom, validTo)
 	return err
+}
+
+// GetUserRole returns the role assigned to a username
+func (d *DB) GetUserRole(username string) (string, error) {
+	var role string
+	err := d.QueryRow("SELECT role FROM users WHERE username = ?", username).Scan(&role)
+	if err != nil {
+		return "", err
+	}
+	return role, nil
+}
+
+// --- Group Management ---
+
+// Group represents a logical group of users
+type Group struct {
+	ID          int
+	Name        string
+	Description string
+	MaxTTL      int
+	CreatedAt   time.Time
+}
+
+// CreateGroup creates a new group
+func (d *DB) CreateGroup(name, description string) error {
+	_, err := d.Exec("INSERT INTO groups (name, description) VALUES (?, ?)", name, description)
+	return err
+}
+
+// DeleteGroup deletes a group by name
+func (d *DB) DeleteGroup(name string) error {
+	_, err := d.Exec("DELETE FROM groups WHERE name = ?", name)
+	return err
+}
+
+// ListGroups returns all groups
+func (d *DB) ListGroups() ([]Group, error) {
+	rows, err := d.Query("SELECT id, name, COALESCE(description, ''), COALESCE(max_ttl, 0), created_at FROM groups ORDER BY name ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []Group
+	for rows.Next() {
+		var g Group
+		var createdAt string
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.MaxTTL, &createdAt); err != nil {
+			return nil, err
+		}
+		g.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt) // SQLite default format
+		groups = append(groups, g)
+	}
+	return groups, nil
+}
+
+// AddUserToGroup adds a user to a group
+func (d *DB) AddUserToGroup(username, groupName string) error {
+	query := `
+		INSERT INTO user_groups (user_id, group_id)
+		VALUES (
+			(SELECT id FROM users WHERE username = ?),
+			(SELECT id FROM groups WHERE name = ?)
+		)
+	`
+	_, err := d.Exec(query, username, groupName)
+	return err
+}
+
+// RemoveUserFromGroup removes a user from a group
+func (d *DB) RemoveUserFromGroup(username, groupName string) error {
+	query := `
+		DELETE FROM user_groups
+		WHERE user_id = (SELECT id FROM users WHERE username = ?)
+		AND group_id = (SELECT id FROM groups WHERE name = ?)
+	`
+	_, err := d.Exec(query, username, groupName)
+	return err
+}
+
+// GetUserGroups returns all group names a user belongs to
+func (d *DB) GetUserGroups(username string) ([]string, error) {
+	query := `
+		SELECT g.name
+		FROM groups g
+		JOIN user_groups ug ON g.id = ug.group_id
+		JOIN users u ON ug.user_id = u.id
+		WHERE u.username = ?
+	`
+	rows, err := d.Query(query, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// GetUserGroupsByGroupName returns all usernames belonging to a group
+func (d *DB) GetUserGroupsByGroupName(groupName string) ([]string, error) {
+	query := `
+		SELECT u.username
+		FROM users u
+		JOIN user_groups ug ON u.id = ug.user_id
+		JOIN groups g ON ug.group_id = g.id
+		WHERE g.name = ?
+	`
+	rows, err := d.Query(query, groupName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// --- TTL Policy Management ---
+
+// SetUserMaxTTL sets the maximum allow TTL for a user
+func (d *DB) SetUserMaxTTL(username string, ttl int) error {
+	_, err := d.Exec("UPDATE users SET max_ttl = ? WHERE username = ?", ttl, username)
+	return err
+}
+
+// SetGroupMaxTTL sets the maximum allow TTL for a group
+func (d *DB) SetGroupMaxTTL(groupName string, ttl int) error {
+	_, err := d.Exec("UPDATE groups SET max_ttl = ? WHERE name = ?", ttl, groupName)
+	return err
+}
+
+// GetMaxTTL resolves the maximum allowed TTL for a user by checking
+// their specific setting and all group settings, returning the highest allowed.
+// Returns 0 if no specific policy is found (caller should use global default).
+func (d *DB) GetMaxTTL(username string) (int, error) {
+	var userTTL sql.NullInt64
+	err := d.QueryRow("SELECT max_ttl FROM users WHERE username = ?", username).Scan(&userTTL)
+	if err != nil {
+		return 0, err
+	}
+
+	max := 0
+	if userTTL.Valid {
+		max = int(userTTL.Int64)
+	}
+
+	// Check groups
+	query := `
+		SELECT MAX(g.max_ttl)
+		FROM groups g
+		JOIN user_groups ug ON g.id = ug.group_id
+		JOIN users u ON ug.user_id = u.id
+		WHERE u.username = ? AND g.max_ttl IS NOT NULL
+	`
+	var groupMax sql.NullInt64
+	err = d.QueryRow(query, username).Scan(&groupMax)
+	if err == nil && groupMax.Valid {
+		if int(groupMax.Int64) > max {
+			max = int(groupMax.Int64)
+		}
+	}
+
+	return max, nil
 }
 
 func (d *DB) Close() error {

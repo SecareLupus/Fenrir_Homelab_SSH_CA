@@ -1,0 +1,95 @@
+{{define "content"}}
+<div class="card">
+    <h2 style="margin-top: 0;">Group Management</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem;">
+        Add or remove groups and manage user memberships. Users in a group automatically receive that group name as an
+        SSH principal.
+    </p>
+
+    <!-- Create Group -->
+    <form action="/admin/groups/create" method="POST"
+        style="margin-bottom: 2rem; padding-bottom: 2rem; border-bottom: 1px solid var(--border);">
+        <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 1rem; align-items: end;">
+            <div>
+                <label>Group Name</label>
+                <input type="text" name="name" placeholder="e.g. developers" required style="margin-bottom: 0;">
+            </div>
+            <div>
+                <label>Description</label>
+                <input type="text" name="description" placeholder="e.g. Core Dev Team" style="margin-bottom: 0;">
+            </div>
+            <button type="submit" style="margin-bottom: 0; padding: 0.875rem 1.5rem; width: auto;">Create Group</button>
+        </div>
+    </form>
+
+    <!-- Group List -->
+    <div style="display: grid; gap: 1.5rem;">
+        {{range .Groups}}
+        <div
+            style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.5rem; border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                <div>
+                    <h3 style="margin: 0; font-size: 1.1rem;">{{.Name}}</h3>
+                    <p style="margin: 0.25rem 0 0; font-size: 0.85rem; color: var(--text-muted);">{{.Description}}</p>
+
+                    <!-- Group TTL Policy -->
+                    <form action="/admin/groups/ttl" method="POST"
+                        style="margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="hidden" name="name" value="{{.Name}}">
+                        <label style="margin: 0; white-space: nowrap;">Max TTL (sec):</label>
+                        <input type="number" name="ttl" value="{{if .MaxTTL}}{{.MaxTTL}}{{end}}" placeholder="Default"
+                            style="width: 100px; margin-bottom: 0; padding: 0.4rem 0.6rem; font-size: 0.85rem;">
+                        <button type="submit" class="btn-action"
+                            style="padding: 0.4rem 0.6rem; background: var(--bg); border: 1px solid var(--border); width: auto; margin-top: 0;">Save</button>
+                    </form>
+                </div>
+                <form action="/admin/groups/delete" method="POST" onsubmit="return confirm('Delete this group?')">
+                    <input type="hidden" name="name" value="{{.Name}}">
+                    <button type="submit" class="link-button" style="color: var(--error);">Delete</button>
+                </form>
+            </div>
+
+            <!-- Members -->
+            <div style="margin-top: 1rem;">
+                <label style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Members</label>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;">
+                    {{$groupName := .Name}}
+                    {{range (index $.GroupMembers .Name)}}
+                    <div
+                        style="background: rgba(59, 130, 246, 0.1); color: var(--primary); padding: 0.25rem 0.75rem; border-radius: 100px; font-size: 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
+                        {{.}}
+                        <form action="/admin/groups/members/toggle" method="POST" style="display: inline; margin: 0;">
+                            <input type="hidden" name="group" value="{{$groupName}}">
+                            <input type="hidden" name="username" value="{{.}}">
+                            <input type="hidden" name="action" value="remove">
+                            <button type="submit" class="link-button"
+                                style="color: var(--error); font-size: 1rem; line-height: 1;">&times;</button>
+                        </form>
+                    </div>
+                    {{else}}
+                    <span style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">No members yet</span>
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- Add Member -->
+            <form action="/admin/groups/members/toggle" method="POST"
+                style="margin-top: 1.5rem; display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;">
+                <input type="hidden" name="group" value="{{.Name}}">
+                <input type="hidden" name="action" value="add">
+                <select name="username" style="margin-bottom: 0; font-size: 0.85rem;">
+                    <option value="" disabled selected>Add user...</option>
+                    {{range $.Users}}
+                    <option value="{{.Username}}">{{.Username}}</option>
+                    {{end}}
+                </select>
+                <button type="submit"
+                    style="margin-bottom: 0; padding: 0.5rem 1rem; font-size: 0.85rem; width: auto;">Add</button>
+            </form>
+        </div>
+        {{else}}
+        <p style="text-align: center; color: var(--text-muted); margin: 2rem 0;">No groups defined yet.</p>
+        {{end}}
+    </div>
+</div>
+{{end}}
