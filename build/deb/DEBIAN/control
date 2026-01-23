@@ -1,0 +1,8 @@
+Package: homelab-ssh-ca
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Desmond <desmond@example.com>
+Description: Homelab SSH CA Client and GUI
+ A user-friendly tool for managing SSH certificates and launching authenticated sessions.

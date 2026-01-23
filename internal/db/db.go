@@ -1,8 +1,17 @@
 package db
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	// Driver registration
@@ -12,10 +21,12 @@ import (
 // DB wraps the sql.DB connection
 type DB struct {
 	*sql.DB
+	WebhookURL    string
+	EncryptionKey []byte
 }
 
 // Init opens the SQLite database and runs migrations
-func Init(path string) (*DB, error) {
+func Init(path, webhookURL, encKey string) (*DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
@@ -25,7 +36,10 @@ func Init(path string) (*DB, error) {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 
-	d := &DB{db}
+	d := &DB{DB: db, WebhookURL: webhookURL}
+	if encKey != "" {
+		d.EncryptionKey = []byte(encKey)
+	}
 	if err := d.migrate(); err != nil {
 		d.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -116,9 +130,22 @@ func (d *DB) migrate() error {
 	CREATE TABLE IF NOT EXISTS user_groups (
 		user_id INTEGER NOT NULL,
 		group_id INTEGER NOT NULL,
-		PRIMARY KEY(user_id, group_id),
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
 		FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS webauthn_credentials (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		credential_id BLOB NOT NULL,
+		public_key BLOB NOT NULL,
+		attestation_type TEXT,
+		aaguid BLOB,
+		sign_count INTEGER,
+		clone_warning BOOLEAN,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+		UNIQUE(credential_id)
 	);
 	`
 	_, err := d.Exec(schema)
@@ -208,10 +235,16 @@ func (d *DB) ListUsers() ([]User, error) {
 		var u User
 		var enabled int
 		var createdAt string
-		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &enabled, &u.MFASecret, &u.MaxTTL, &createdAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &enabled, &u.MFASecret, &createdAt); err != nil {
 			return nil, err
 		}
 		u.Enabled = enabled == 1
+		if u.MFASecret != "" && len(d.EncryptionKey) > 0 {
+			dec, err := d.decrypt(u.MFASecret)
+			if err == nil {
+				u.MFASecret = dec
+			}
+		}
 		users = append(users, u)
 	}
 	return users, nil
@@ -277,6 +310,12 @@ func (d *DB) ListKeysCreatedSince(since string) ([]KeyAudit, error) {
 
 // SetUserMFASecret sets the TOTP secret for a user
 func (d *DB) SetUserMFASecret(username, secret string) error {
+	if secret != "" && len(d.EncryptionKey) > 0 {
+		enc, err := d.encrypt(secret)
+		if err == nil {
+			secret = enc
+		}
+	}
 	_, err := d.Exec("UPDATE users SET mfa_secret = ? WHERE username = ?", secret, username)
 	return err
 }
@@ -288,8 +327,12 @@ func (d *DB) GetUserMFASecret(username string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !secret.Valid {
+	if !secret.Valid || secret.String == "" {
 		return "", nil
+	}
+
+	if len(d.EncryptionKey) > 0 {
+		return d.decrypt(secret.String)
 	}
 	return secret.String, nil
 }
@@ -476,6 +519,24 @@ func (d *DB) CheckHostPublicKeyOwnership(fingerprint string) (string, error) {
 // LogEvent writes an entry to the audit log
 func (d *DB) LogEvent(userID *int, event, metadata string) {
 	_, _ = d.Exec("INSERT INTO audit_logs (user_id, event, metadata) VALUES (?, ?, ?)", userID, event, metadata)
+
+	if d.WebhookURL != "" {
+		go func() {
+			payload := map[string]any{
+				"event":     event,
+				"metadata":  metadata,
+				"timestamp": time.Now().Format(time.RFC3339),
+			}
+			if userID != nil {
+				payload["user_id"] = *userID
+			}
+			body, _ := json.Marshal(payload)
+			resp, err := http.Post(d.WebhookURL, "application/json", strings.NewReader(string(body)))
+			if err == nil {
+				resp.Body.Close()
+			}
+		}()
+	}
 }
 
 // RevokeKeyByFingerprint adds a key to the revocation list
@@ -730,11 +791,79 @@ func (d *DB) GetMaxTTL(username string) (int, error) {
 }
 
 func (d *DB) Close() error {
-	// ...
 	if d.DB != nil {
 		return d.DB.Close()
 	}
 	return nil
+}
+
+// WebAuthnCredential matches the structure expected by go-webauthn but simple for DB
+type WebAuthnCredential struct {
+	ID              int
+	CredentialID    []byte
+	PublicKey       []byte
+	AttestationType string
+	AAGUID          []byte
+	SignCount       int32
+	CloneWarning    bool
+}
+
+func (d *DB) GetWebAuthnCredentials(username string) ([]WebAuthnCredential, error) {
+	query := `
+		SELECT wc.id, wc.credential_id, wc.public_key, wc.attestation_type, wc.aaguid, wc.sign_count, wc.clone_warning
+		FROM webauthn_credentials wc
+		JOIN users u ON wc.user_id = u.id
+		WHERE u.username = ?
+	`
+	rows, err := d.Query(query, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var creds []WebAuthnCredential
+	for rows.Next() {
+		var c WebAuthnCredential
+		if err := rows.Scan(&c.ID, &c.CredentialID, &c.PublicKey, &c.AttestationType, &c.AAGUID, &c.SignCount, &c.CloneWarning); err != nil {
+			return nil, err
+		}
+		creds = append(creds, c)
+	}
+	return creds, nil
+}
+
+func (d *DB) AddWebAuthnCredential(username string, credID, pubKey, aaguid []byte, attestationType string, signCount int32) error {
+	uid, _ := d.GetUserID(username)
+	_, err := d.Exec(`
+		INSERT INTO webauthn_credentials (user_id, credential_id, public_key, aaguid, attestation_type, sign_count)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, uid, credID, pubKey, aaguid, attestationType, signCount)
+	return err
+}
+
+func (d *DB) UpdateWebAuthnCredential(credID []byte, signCount int32) error {
+	_, err := d.Exec("UPDATE webauthn_credentials SET sign_count = ? WHERE credential_id = ?", signCount, credID)
+	return err
+}
+
+func (d *DB) GetUser(username string) (*User, error) {
+	var u User
+	var createdAt string
+	var enabled int
+	err := d.QueryRow("SELECT id, username, role, enabled, COALESCE(mfa_secret, ''), COALESCE(max_ttl, 0), created_at FROM users WHERE username = ?", username).
+		Scan(&u.ID, &u.Username, &u.Role, &enabled, &u.MFASecret, &u.MaxTTL, &createdAt)
+	if err != nil {
+		return nil, err
+	}
+	u.Enabled = enabled == 1
+	if u.MFASecret != "" && len(d.EncryptionKey) > 0 {
+		dec, err := d.decrypt(u.MFASecret)
+		if err == nil {
+			u.MFASecret = dec
+		}
+	}
+	u.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	return &u, nil
 }
 
 // TODO: Add User methods
@@ -742,3 +871,63 @@ func (d *DB) Close() error {
 
 // TODO: Add Certificate methods
 // func (d *DB) StoreCertificate(cert *ssh.Certificate) ...
+
+func (d *DB) encrypt(plaintext string) (string, error) {
+	if len(d.EncryptionKey) == 0 {
+		return plaintext, nil
+	}
+
+	key := sha256.Sum256(d.EncryptionKey)
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+func (d *DB) decrypt(ciphertext string) (string, error) {
+	if len(d.EncryptionKey) == 0 {
+		return ciphertext, nil
+	}
+
+	data, err := base64.StdEncoding.DecodeString(ciphertext)
+	if err != nil {
+		return "", err
+	}
+
+	key := sha256.Sum256(d.EncryptionKey)
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return "", err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return "", fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertextBytes := data[:nonceSize], data[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertextBytes, nil)
+	if err != nil {
+		return "", err
+	}
+
+	return string(plaintext), nil
+}

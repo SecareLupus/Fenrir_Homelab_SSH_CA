@@ -4,9 +4,9 @@ import (
 	"log"
 	"os"
 
+	"ssh-ca/internal/ca"
 	"ssh-ca/internal/config"
 	"ssh-ca/internal/db"
-	"ssh-ca/internal/ca"
 	"ssh-ca/internal/web"
 )
 
@@ -18,7 +18,7 @@ func main() {
 	}
 
 	// 2. Initialize Database (SQLite)
-	database, err := db.Init(cfg.DBPath)
+	database, err := db.Init(cfg.DBPath, cfg.AuditWebhookURL, cfg.DBEncryptionKey)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}

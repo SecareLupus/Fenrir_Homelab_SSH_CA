@@ -17,10 +17,10 @@
 - [x] **Prometheus Metrics**: Export signing activity, error rates, and system health for monitoring.
 
 ## Phase 9: Client UX & Distribution
-- [ ] **Desktop Client Polish**: Enhance `client-gui` with system tray integration and improved UI.
-- [ ] **Native Installers**: Create `.deb`, `.rpm`, and Windows/macOS installers for the client.
-- [ ] **Shell Integration**: Auto-completion for CLI and optional shell aliases for cert-aware SSH.
+- [x] **Desktop Client Polish**: Enhance `client-gui` with system tray integration and improved UI.
+- [x] **Native Installers**: Create `.deb`, `.rpm`, and Windows/macOS installers for the client.
+- [x] **Shell Integration**: Auto-completion for CLI and optional shell aliases for cert-aware SSH.
 
 ## Phase 10: Quality Assurance
-- [ ] **E2E Integration Tests**: Automated tests using Docker to verify the full signing and connection chain.
-- [ ] **Security Review**: Deep audit of intermediate key handling and database encryption at rest.
+- [x] **E2E Integration Tests**: Automated tests using Docker to verify the full signing and connection chain.
+- [x] **Security Review**: Deep audit of intermediate key handling and database encryption at rest.

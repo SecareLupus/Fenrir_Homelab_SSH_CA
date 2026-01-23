@@ -46,13 +46,13 @@ func New(cfg *config.Config) (*Service, error) {
 	s := &Service{}
 
 	// 1. Load Software Keys (Fallback)
-	userSigner, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY")
+	userSigner, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY", cfg.CAPassphrase)
 	if err != nil {
 		return nil, fmt.Errorf("user ca key: %w", err)
 	}
 	s.userSigners = append(s.userSigners, userSigner)
 
-	hostSigner, err := loadOrGenKey(filepath.Join(keyDir, "host_ca"), "SSH CA HOST KEY")
+	hostSigner, err := loadOrGenKey(filepath.Join(keyDir, "host_ca"), "SSH CA HOST KEY", cfg.CAPassphrase)
 	if err != nil {
 		return nil, fmt.Errorf("host ca key: %w", err)
 	}
@@ -75,11 +75,14 @@ func New(cfg *config.Config) (*Service, error) {
 	return s, nil
 }
 
-func loadOrGenKey(path, headers string) (ssh.Signer, error) {
+func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 	// 1. Try to load
 	content, err := os.ReadFile(path)
 	if err == nil {
 		// Found key, parse it
+		if passphrase != "" {
+			return ssh.ParsePrivateKeyWithPassphrase(content, []byte(passphrase))
+		}
 		return ssh.ParsePrivateKey(content)
 	}
 	if !os.IsNotExist(err) {
@@ -92,7 +95,12 @@ func loadOrGenKey(path, headers string) (ssh.Signer, error) {
 		return nil, fmt.Errorf("generate key: %w", err)
 	}
 
-	block, err := ssh.MarshalPrivateKey(priv, "")
+	var block *pem.Block
+	if passphrase != "" {
+		block, err = ssh.MarshalPrivateKey(priv, passphrase)
+	} else {
+		block, err = ssh.MarshalPrivateKey(priv, "")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("marshal private key: %w", err)
 	}

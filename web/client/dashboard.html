@@ -239,10 +239,27 @@
         </div>
 
         <div class="card-right">
-            <h2>Quick Launch</h2>
-            <input type="text" class="quick-launch-input" placeholder="Search hostname..." id="host-search">
+            <h2>Quick Connect</h2>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+                Enter IP, URL, or Hostname to launch a cert-authenticated session.
+            </p>
+            <div style="position: relative;">
+                <input type="text" class="quick-launch-input" placeholder="e.g. 192.168.1.50 or web-srv-01" id="host-search">
+                <button onclick="quickConnect()" style="position: absolute; right: 8px; top: 6px; background: var(--primary); border: none; color: white; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.8rem;">
+                    Launch
+                </button>
+            </div>
+            
             <div class="host-list" id="host-list">
-                <!-- Hosts will be populated here -->
+                <div class="info-label" style="margin-bottom: 0.5rem;">Recent or Suggested</div>
+                <div class="host-item" onclick="document.getElementById('host-search').value = 'pi-hole.local'; quickConnect()">
+                    <span class="host-icon">🖥️</span>
+                    <span>pi-hole.local</span>
+                </div>
+                <div class="host-item" onclick="document.getElementById('host-search').value = '10.0.0.5'; quickConnect()">
+                    <span class="host-icon">🖥️</span>
+                    <span>10.0.0.5</span>
+                </div>
             </div>
         </div>
 
@@ -255,18 +272,24 @@
 
     <script>
         async function updateStatus() {
-            const resp = await fetch('/api/status');
-            const data = await resp.json();
+            try {
+                const resp = await fetch('/api/status');
+                const data = await resp.json();
 
-            document.getElementById('user-display').innerText = data.Fingerprint;
-            document.getElementById('expiry-display').innerText = data.ExpiryText;
+                document.getElementById('user-display').innerText = data.Fingerprint;
+                document.getElementById('expiry-display').innerText = data.ExpiryText;
 
-            if (data.HasCert) {
-                document.getElementById('status-text').innerText = 'Certified';
-                document.getElementById('status-badge').style.color = '#10b981';
-            } else {
-                document.getElementById('status-text').innerText = 'Unauthorized';
-                document.getElementById('status-badge').style.color = '#f44336';
+                if (data.HasCert) {
+                    document.getElementById('status-text').innerText = 'Certified';
+                    document.getElementById('status-badge').style.color = '#10b981';
+                    document.getElementById('status-badge').style.background = 'rgba(16, 185, 129, 0.1)';
+                } else {
+                    document.getElementById('status-text').innerText = 'Unauthorized';
+                    document.getElementById('status-badge').style.color = '#f43f5e';
+                    document.getElementById('status-badge').style.background = 'rgba(244, 63, 94, 0.1)';
+                }
+            } catch (e) {
+                console.error("Failed to fetch status", e);
             }
         }
 
@@ -275,8 +298,32 @@
             if (resp.status === 202) {
                 document.getElementById('fido-overlay').style.display = 'flex';
                 // Poll for completion...
+                const poll = setInterval(async () => {
+                   const r = await fetch('/api/status');
+                   const d = await r.json();
+                   if (d.HasCert) {
+                       clearInterval(poll);
+                       document.getElementById('fido-overlay').style.display = 'none';
+                       updateStatus();
+                   }
+                }, 1000);
+            } else if (resp.ok) {
+                updateStatus();
             }
         }
+
+        function quickConnect() {
+            const host = document.getElementById('host-search').value.trim();
+            if (host) {
+                fetch(`/api/launch?host=${encodeURIComponent(host)}`);
+            }
+        }
+
+        document.getElementById('host-search').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                quickConnect();
+            }
+        });
 
         // Initialize
         updateStatus();

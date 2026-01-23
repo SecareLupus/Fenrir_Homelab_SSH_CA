@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -13,9 +14,18 @@ import (
 	"runtime"
 	"ssh-ca/internal/client"
 	"time"
+
+	"github.com/getlantern/systray"
 )
 
+//go:embed assets/icon.png
+var iconData []byte
+
+//go:embed assets/dashboard.html
+var dashboardHTML string
+
 var globalConfig *client.Config
+var serverPort = 4500
 
 func main() {
 	home, _ := os.UserHomeDir()
@@ -29,22 +39,72 @@ func main() {
 	// 1. Start Renewal Loop
 	go renewalLoop()
 
-	// 2. Serve Local Dashboard
+	// 2. Start HTTP Server
+	go startServer()
+
+	// 3. Start System Tray
+	systray.Run(onReady, onExit)
+}
+
+func startServer() {
 	http.HandleFunc("/", handleDashboard)
 	http.HandleFunc("/api/status", handleStatus)
 	http.HandleFunc("/api/renew", handleRenew)
 	http.HandleFunc("/api/launch", handleLaunch)
 
-	port := 4500
-	fmt.Printf("SSH-CA Control Center starting on http://localhost:%d\n", port)
+	fmt.Printf("SSH-CA Control Center starting on http://localhost:%d\n", serverPort)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", serverPort), nil))
+}
 
-	// Auto-open in browser for "GUI" experience
+func onReady() {
+	systray.SetIcon(iconData)
+	systray.SetTitle("SSH CA")
+	systray.SetTooltip("Homelab SSH CA Control Center")
+
+	mStatus := systray.AddMenuItem("Status: Checking...", "Certificate Status")
+	mStatus.Disable()
+
+	systray.AddSeparator()
+
+	mDashboard := systray.AddMenuItem("Open Dashboard", "Open the web dashboard")
+	mRenew := systray.AddMenuItem("Renew Certificate", "Manually trigger certificate renewal")
+
+	systray.AddSeparator()
+
+	mQuit := systray.AddMenuItem("Quit", "Quit the application")
+
+	// Update status item in loop
 	go func() {
-		time.Sleep(1 * time.Second)
-		openBrowser(fmt.Sprintf("http://localhost:%d", port))
+		for {
+			id, err := globalConfig.GetIdentity()
+			if err == nil {
+				if id.HasCert {
+					mStatus.SetTitle(fmt.Sprintf("Status: Certified (%v)", time.Until(id.CertExpiry).Round(time.Minute)))
+				} else {
+					mStatus.SetTitle("Status: Unauthorized")
+				}
+			} else {
+				mStatus.SetTitle("Status: Error")
+			}
+			time.Sleep(30 * time.Second)
+		}
 	}()
 
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
+	for {
+		select {
+		case <-mDashboard.ClickedCh:
+			openBrowser(fmt.Sprintf("http://localhost:%d", serverPort))
+		case <-mRenew.ClickedCh:
+			globalConfig.Sign(context.Background(), nil)
+		case <-mQuit.ClickedCh:
+			systray.Quit()
+			return
+		}
+	}
+}
+
+func onExit() {
+	os.Exit(0)
 }
 
 func renewalLoop() {
@@ -62,7 +122,11 @@ func renewalLoop() {
 }
 
 func handleDashboard(w http.ResponseWriter, r *http.Request) {
-	tmpl, _ := template.ParseFiles("web/client/dashboard.html")
+	tmpl, err := template.New("dashboard").Parse(dashboardHTML)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 	tmpl.Execute(w, nil)
 }
 

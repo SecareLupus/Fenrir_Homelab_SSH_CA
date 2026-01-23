@@ -1,0 +1,58 @@
+version: '3.8'
+services:
+  ca-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - CA_PASSPHRASE=test-passphrase
+      - DB_ENCRYPTION_KEY=test-db-key
+      - BIND_ADDR=:8080
+      - DB_PATH=/app/data/ssh-ca.db
+      - KEY_PATH=/app/data/ca-keys
+      - CA_HARDENED_SYNC=false
+    volumes:
+      - ca-data:/app/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/api/v1/health" ]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  ssh-target:
+    image: alpine:latest
+    privileged: true
+    command: >
+      sh -c "apk add --no-cache openssh-server curl &&
+             ssh-keygen -A &&
+             mkdir -p /root/.ssh &&
+             echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config &&
+             echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config &&
+             echo 'TrustedUserCAKeys /etc/ssh/user_ca.pub' >> /etc/ssh/sshd_config &&
+             echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config &&
+             # Wait for CA server, then fetch pubkey
+             until curl -sf http://ca-server:8080/api/v1/ca/user > /etc/ssh/user_ca.pub; do sleep 1; done &&
+             # Create a test user for SSH
+             adduser -D testuser &&
+             passwd -d testuser &&
+             /usr/sbin/sshd -D -e"
+    depends_on:
+      ca-server:
+        condition: service_healthy
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - CA_SERVER_URL=http://ca-server:8080
+      - TARGET_HOST=ssh-target
+    entrypoint: [ "./test-e2e-suite.sh" ]
+    depends_on:
+      ca-server:
+        condition: service_healthy
+      ssh-target:
+        condition: service_started
+
+volumes:
+  ca-data:

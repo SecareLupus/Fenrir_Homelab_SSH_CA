@@ -14,10 +14,88 @@
         <button type="submit" style="margin-top: 1rem; padding: 1rem;">Sign In</button>
     </form>
 
+    {{if .OIDCEnabled}}
+    <div style="margin-top: 1.5rem; display: flex; align-items: center; gap: 1rem;">
+        <div style="flex: 1; height: 1px; background: var(--border);"></div>
+        <span
+            style="color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Or</span>
+        <div style="flex: 1; height: 1px; background: var(--border);"></div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem;">
+        <a href="/login/oidc" class="btn"
+            style="display: block; text-align: center; padding: 1rem; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); color: var(--text); text-decoration: none; border-radius: 12px; font-weight: 600; transition: 0.2s;">
+            Login with SSO (OIDC)
+        </a>
+
+        <button id="webauthn-login-btn"
+            style="display: block; width: 100%; text-align: center; padding: 1rem; background: rgba(59, 130, 246, 0.1); border: 1px solid var(--primary); color: var(--text); border-radius: 12px; font-weight: 600; cursor: pointer; transition: 0.2s;">
+            Login with Security Key
+        </button>
+    </div>
+    {{end}}
+
     <div style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border); text-align: center;">
         <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">
             <b>First run?</b> Login with your desired admin credentials to bootstrap the system.
         </p>
     </div>
 </div>
+
+<script>
+    document.getElementById('webauthn-login-btn')?.addEventListener('click', async () => {
+        const username = document.getElementById('username').value;
+        if (!username) {
+            alert('Please enter your username first');
+            return;
+        }
+
+        try {
+            const resp = await fetch('/webauthn/login/begin?username=' + encodeURIComponent(username), { method: 'POST' });
+            if (!resp.ok) throw new Error(await resp.text());
+            const options = await resp.json();
+
+            options.publicKey.challenge = bufferDecode(options.publicKey.challenge);
+            if (options.publicKey.allowCredentials) {
+                options.publicKey.allowCredentials.forEach(c => c.id = bufferDecode(c.id));
+            }
+
+            const assertion = await navigator.credentials.get({
+                publicKey: options.publicKey
+            });
+
+            const assertionForServer = {
+                id: assertion.id,
+                rawId: bufferEncode(assertion.rawId),
+                type: assertion.type,
+                response: {
+                    authenticatorData: bufferEncode(assertion.response.authenticatorData),
+                    clientDataJSON: bufferEncode(assertion.response.clientDataJSON),
+                    signature: bufferEncode(assertion.response.signature),
+                    userHandle: bufferEncode(assertion.response.userHandle || ""),
+                },
+            };
+
+            const finishResp = await fetch('/webauthn/login/finish?username=' + encodeURIComponent(username), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(assertionForServer)
+            });
+
+            if (!finishResp.ok) throw new Error(await finishResp.text());
+            window.location.href = '/';
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    });
+
+    function bufferDecode(value) {
+        return Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+    }
+
+    function bufferEncode(value) {
+        return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
+            .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    }
+</script>
 {{end}}

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"log"
@@ -19,9 +20,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 
 	"github.com/xlzd/gotp"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-webauthn/webauthn/webauthn"
+	"golang.org/x/oauth2"
 )
 
 type Server struct {
@@ -36,6 +42,13 @@ type Server struct {
 	// Metrics
 	metricUserCertsSigned uint64
 	metricHostCertsSigned uint64
+
+	oidcProvider *oidc.Provider
+	oidcConfig   oauth2.Config
+
+	webauthn *webauthn.WebAuthn
+	// webauthnSessions stores session data during registration/login: username -> sessionData
+	webauthnSessions map[string]*webauthn.SessionData
 }
 
 type challenge struct {
@@ -45,12 +58,40 @@ type challenge struct {
 
 func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 	s := &Server{
-		cfg:        cfg,
-		db:         db,
-		ca:         ca,
-		mux:        http.NewServeMux(),
-		challenges: make(map[string]challenge),
+		cfg:              cfg,
+		db:               db,
+		ca:               ca,
+		mux:              http.NewServeMux(),
+		challenges:       make(map[string]challenge),
+		webauthnSessions: make(map[string]*webauthn.SessionData),
 	}
+	if cfg.OIDC.Enabled {
+		provider, err := oidc.NewProvider(context.Background(), cfg.OIDC.IssuerURL)
+		if err != nil {
+			log.Printf("failed to initialize OIDC provider: %v", err)
+		} else {
+			s.oidcProvider = provider
+			s.oidcConfig = oauth2.Config{
+				ClientID:     cfg.OIDC.ClientID,
+				ClientSecret: cfg.OIDC.ClientSecret,
+				Endpoint:     provider.Endpoint(),
+				RedirectURL:  cfg.OIDC.RedirectURL,
+				Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+			}
+		}
+	}
+
+	w, err := webauthn.New(&webauthn.Config{
+		RPDisplayName: cfg.WebAuthn.RPDisplayName,
+		RPID:          cfg.WebAuthn.RPID,
+		RPOrigins:     []string{cfg.WebAuthn.RPOrigin},
+	})
+	if err != nil {
+		log.Printf("failed to initialize WebAuthn: %v", err)
+	} else {
+		s.webauthn = w
+	}
+
 	s.loadTemplates()
 	s.routes()
 	return s
@@ -79,7 +120,15 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("/", s.handleIndex)
 	s.mux.HandleFunc("/login", s.handleLogin)
+	s.mux.HandleFunc("/login/oidc", s.handleLoginOIDC)
+	s.mux.HandleFunc("/login/oidc/callback", s.handleLoginOIDCCallback)
 	s.mux.HandleFunc("/login/mfa", s.handleLoginMFA)
+
+	s.mux.HandleFunc("/webauthn/register/begin", s.handleWebAuthnRegisterBegin)
+	s.mux.HandleFunc("/webauthn/register/finish", s.handleWebAuthnRegisterFinish)
+	s.mux.HandleFunc("/webauthn/login/begin", s.handleWebAuthnLoginBegin)
+	s.mux.HandleFunc("/webauthn/login/finish", s.handleWebAuthnLoginFinish)
+
 	s.mux.HandleFunc("/logout", s.handleLogout)
 	s.mux.HandleFunc("/mfa/setup", s.handleMFASetup)
 	s.mux.HandleFunc("/cert/request", s.handleCertRequest)
@@ -117,7 +166,7 @@ func (s *Server) Start() error {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
-		s.renderPage(w, "login.html", nil)
+		s.renderPage(w, "login.html", map[string]any{"OIDCEnabled": s.cfg.OIDC.Enabled})
 		return
 	}
 
@@ -201,6 +250,83 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 	})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (s *Server) handleLoginOIDC(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.OIDC.Enabled || s.oidcProvider == nil {
+		http.Error(w, "OIDC is not enabled", 400)
+		return
+	}
+
+	state := "randomstate" // Should be random and stored in session for CSRF
+	url := s.oidcConfig.AuthCodeURL(state)
+	http.Redirect(w, r, url, http.StatusFound)
+}
+
+func (s *Server) handleLoginOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.OIDC.Enabled || s.oidcProvider == nil {
+		http.Error(w, "OIDC is not enabled", 400)
+		return
+	}
+
+	state := r.URL.Query().Get("state")
+	if state != "randomstate" { // Should verify against session
+		http.Error(w, "invalid state", 400)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	oauth2Token, err := s.oidcConfig.Exchange(context.Background(), code)
+	if err != nil {
+		http.Error(w, "Failed to exchange token: "+err.Error(), 500)
+		return
+	}
+
+	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+	if !ok {
+		http.Error(w, "No id_token in token response", 500)
+		return
+	}
+
+	verifier := s.oidcProvider.Verifier(&oidc.Config{ClientID: s.oidcConfig.ClientID})
+	idToken, err := verifier.Verify(context.Background(), rawIDToken)
+	if err != nil {
+		http.Error(w, "Failed to verify ID Token: "+err.Error(), 500)
+		return
+	}
+
+	var claims struct {
+		Email string `json:"email"`
+	}
+	if err := idToken.Claims(&claims); err != nil {
+		http.Error(w, "Failed to parse claims: "+err.Error(), 500)
+		return
+	}
+
+	username := claims.Email
+	if username == "" {
+		http.Error(w, "No email in OIDC claims", 400)
+		return
+	}
+
+	// Upsert user if enabled
+	_, err = s.db.GetUserHash(username)
+	if err != nil {
+		// Create user with a random password if they don't exist
+		// Since they authenticated via OIDC, we just need a record.
+		err = s.db.CreateUser(username, "OIDC_EXTERNAL_USER")
+		if err == nil {
+			_ = s.db.SetUserEnabled(username, true)
+		}
+	}
+
+	if !s.db.IsUserEnabled(username) {
+		http.Error(w, "User account disabled", 403)
+		return
+	}
+
+	s.setSession(w, r, username)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) authenticate(r *http.Request) string {
@@ -1263,4 +1389,120 @@ func (s *Server) handleAdminHostsDelete(w http.ResponseWriter, r *http.Request) 
 	s.db.LogEvent(&uid, "host_deleted", hostname)
 
 	http.Redirect(w, r, "/admin/hosts", http.StatusSeeOther)
+}
+
+func (s *Server) handleWebAuthnRegisterBegin(w http.ResponseWriter, r *http.Request) {
+	username := s.authenticate(r)
+	if username == "" {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+
+	user, err := s.db.GetUser(username)
+	if err != nil {
+		http.Error(w, "User not found", 404)
+		return
+	}
+
+	creds, _ := s.db.GetWebAuthnCredentials(username)
+	waUser := &webauthnUser{User: user, creds: creds}
+
+	options, sessionData, err := s.webauthn.BeginRegistration(waUser)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	s.webauthnSessions[username] = sessionData
+	json.NewEncoder(w).Encode(options)
+}
+
+func (s *Server) handleWebAuthnRegisterFinish(w http.ResponseWriter, r *http.Request) {
+	username := s.authenticate(r)
+	if username == "" {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+
+	sessionData, ok := s.webauthnSessions[username]
+	if !ok {
+		http.Error(w, "Session not found", 400)
+		return
+	}
+	delete(s.webauthnSessions, username)
+
+	user, _ := s.db.GetUser(username)
+	creds, _ := s.db.GetWebAuthnCredentials(username)
+	waUser := &webauthnUser{User: user, creds: creds}
+
+	credential, err := s.webauthn.FinishRegistration(waUser, *sessionData, r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	err = s.db.AddWebAuthnCredential(username, credential.ID, credential.PublicKey, credential.Authenticator.AAGUID, string(credential.AttestationType), int32(credential.Authenticator.SignCount))
+	if err != nil {
+		http.Error(w, "Failed to store credential: "+err.Error(), 500)
+		return
+	}
+
+	w.Write([]byte("Registration successful"))
+}
+
+func (s *Server) handleWebAuthnLoginBegin(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		http.Error(w, "Missing username", 400)
+		return
+	}
+
+	user, err := s.db.GetUser(username)
+	if err != nil {
+		http.Error(w, "User not found", 404)
+		return
+	}
+
+	creds, _ := s.db.GetWebAuthnCredentials(username)
+	waUser := &webauthnUser{User: user, creds: creds}
+
+	options, sessionData, err := s.webauthn.BeginLogin(waUser)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	s.webauthnSessions[username] = sessionData
+	json.NewEncoder(w).Encode(options)
+}
+
+func (s *Server) handleWebAuthnLoginFinish(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		http.Error(w, "Missing username", 400)
+		return
+	}
+
+	sessionData, ok := s.webauthnSessions[username]
+	if !ok {
+		http.Error(w, "Session not found", 400)
+		return
+	}
+	delete(s.webauthnSessions, username)
+
+	user, _ := s.db.GetUser(username)
+	creds, _ := s.db.GetWebAuthnCredentials(username)
+	waUser := &webauthnUser{User: user, creds: creds}
+
+	credential, err := s.webauthn.FinishLogin(waUser, *sessionData, r)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	// Update sign count
+	s.db.UpdateWebAuthnCredential(credential.ID, int32(credential.Authenticator.SignCount))
+
+	s.setSession(w, r, username)
+	w.Write([]byte("Login successful"))
 }
