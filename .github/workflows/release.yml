@@ -38,7 +38,10 @@ jobs:
       - name: Build Binaries
         run: |
           mkdir -p dist
-          LDFLAGS="-X 'ssh-ca/internal/config.Version=${{ github.ref_name }}' -s -w"
+          VERSION_RAW=${{ github.ref_name }}
+          # Strip 'v' prefix for deb version (e.g. v1.0.0 -> 1.0.0)
+          VERSION_DEB=${VERSION_RAW#v}
+          LDFLAGS="-X 'ssh-ca/internal/config.Version=${VERSION_RAW}' -s -w"
           
           # 1. Server Binary (CGO disabled for portability)
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-server-linux-amd64 ./cmd/server
@@ -69,17 +72,17 @@ jobs:
           cp scripts/completion.sh build/deb/etc/bash_completion.d/ssh-ca-client
           
           cat > build/deb/DEBIAN/control <<EOF
-          Package: homelab-ssh-ca
-          Version: ${{ github.ref_name }}
-          Section: utils
-          Priority: optional
-          Architecture: amd64
-          Maintainer: SecareLupus
-          Description: Homelab SSH CA Client and GUI
-           A user-friendly tool for managing SSH certificates and launching authenticated sessions.
-          EOF
+Package: homelab-ssh-ca
+Version: ${VERSION_DEB}
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: SecareLupus
+Description: Homelab SSH CA Client and GUI
+ A user-friendly tool for managing SSH certificates and launching authenticated sessions.
+EOF
           
-          dpkg-deb --root-owner-group --build build/deb dist/homelab-ssh-ca_${{ github.ref_name }}_amd64.deb
+          dpkg-deb --root-owner-group --build build/deb dist/homelab-ssh-ca_${VERSION_RAW}_amd64.deb
 
       - name: Generate Checksums
         run: |
@@ -120,8 +123,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/ssh-ca:latest
-            ghcr.io/${{ github.repository }}/ssh-ca:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/ssh-ca:latest
+            ghcr.io/${{ github.repository_owner }}/ssh-ca:${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
