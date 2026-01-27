@@ -1,8 +1,20 @@
+/*
+ * Copyright (c) 2026 SecareLupus
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
 package config
 
 import (
 	"os"
 )
+
+// Version is injected at build time
+var Version = "dev"
 
 // Config holds all configuration for the SSH CA
 type Config struct {

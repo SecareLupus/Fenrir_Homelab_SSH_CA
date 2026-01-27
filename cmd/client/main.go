@@ -1,3 +1,12 @@
+/*
+ * Copyright (c) 2026 SecareLupus
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
 package main
 
 import (
@@ -8,14 +17,21 @@ import (
 	"os"
 	"path/filepath"
 	"ssh-ca/internal/client"
+	"ssh-ca/internal/config"
 )
 
 func main() {
+	showVersion := flag.Bool("version", false, "Show version and exit")
 	caURL := flag.String("url", "http://localhost:8080", "SSH CA Server URL")
 	apiKeyFile := flag.String("key-file", "", "Path to file containing API Key (optional if already enrolled)")
 	keyPath := flag.String("identity", "", "Path to SSH private key")
 	keyType := flag.String("type", "ed25519", "Key type to generate (ed25519, ed25519-sk)")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("SSH CA Client %s\n", config.Version)
+		return
+	}
 
 	var apiKey string
 	if *apiKeyFile != "" {

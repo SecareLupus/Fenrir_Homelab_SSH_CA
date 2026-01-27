@@ -1,3 +1,12 @@
+/*
+ * Copyright (c) 2026 SecareLupus
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
 package main
 
 /*
@@ -10,6 +19,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"unsafe"
 
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -20,7 +30,8 @@ import (
 //export go_pam_sm_authenticate
 func go_pam_sm_authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, argv **C.char) C.int {
 	var cUser *C.char
-	if C.pam_get_user(pamh, &cUser, nil) != C.PAM_SUCCESS || cUser == nil {
+	// Using unsafe.Pointer to ensure the double pointer is handled correctly by CGO
+	if C.pam_get_user(pamh, (**C.char)(unsafe.Pointer(&cUser)), nil) != C.PAM_SUCCESS || cUser == nil {
 		return C.PAM_AUTH_ERR
 	}
 	user := C.GoString(cUser)
@@ -53,7 +64,7 @@ func go_pam_sm_authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, argv 
 	//    e. If signature matches, return PAM_SUCCESS
 
 	log.Printf("PAM SSH CA: Authenticating user %s via ssh-agent", user)
-	
+
 	// Simulated success for demonstration of architecture
 	// A real implementation would require the full verification loop above.
 	return C.PAM_SUCCESS

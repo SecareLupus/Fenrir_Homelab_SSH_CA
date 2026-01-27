@@ -69,21 +69,41 @@ To ensure clarity across the ecosystem, we use the following standard terms:
 - **Hardware Security**: Infrastructure for **PKCS#11 (HSM/YubiKey)** signing to ensure non-extractable CA keys.
 - **Audit Friendly**: Detailed event logs with identity-based auditing.
 
+## 📦 Installation
+You can use the SSH CA in two ways:
+
+### 1. Pre-built Binaries (Recommended)
+Download the latest binaries for your platform from the [Releases](https://github.com/SecareLupus/Homelab_SSH_CA/releases) page.
+- `ssh-ca-server-*`: The main CA server.
+- `ssh-ca-client-*`: Command-line tool for users.
+- `ssh-ca-agent-*`: Sync tool for target servers.
+- `ssh-ca-gui-*`: Desktop control center (Linux).
+
+### 2. Docker Images
+Pull the official container from GHCR:
+```bash
+docker pull ghcr.io/secarelupus/ssh-ca:latest
+```
+
 ## 🚀 Deployment Tiers
 
-Choose the security tier that matches your homelab's risk profile.
+Choose the security tier that matches your homelab's risk profile. All tiers use the pre-built Docker image by default.
 
 ### 🛡️ Tier 1: Online CA (Max Convenience)
 Everything runs in a single container. Good for internal-only labs.
-```bash
-docker compose -f deploy/tier-1-online/docker-compose.yml up -d
-```
+1. Download `deploy/tier-1-online/docker-compose.yml`.
+2. Run:
+   ```bash
+   docker compose up -d
+   ```
 
 ### ❄️ Tier 2: Cold-Storage Root (Host Backed)
-Two containers on one host. The Root CA remains stopped except during intermediate renewal. Root keys live on the server's SSD.
-```bash
-docker compose -f deploy/tier-2-shared-host/docker-compose.yml up -d
-```
+Two containers on one host. The Root CA remains stopped except during intermediate renewal.
+1. Download `deploy/tier-2-shared-host/docker-compose.yml`.
+2. Run:
+   ```bash
+   docker compose up -d
+   ```
 
 ### 🔌 Tier 2+: Removable Root (USB Backed)
 Same as Tier 2, but the Root keys live on a **removable USB drive**. High protection against host-level storage compromise.
@@ -168,4 +188,4 @@ To use your SSH certificate for sudo authentication:
 
 ## License
 
-MIT
+This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](LICENSE) file for details.
