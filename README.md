@@ -1,19 +1,19 @@
-# Homelab SSH CA
+# Fenrir SSH CA
 
-A simple, single-binary SSH Certificate Authority designed for homelabs. It features a modern Web UI, SQLite backend, and native Go SSH implementation.
+A simple, single-binary SSH Certificate Authority designed for homelabs. It features a modern Web UI (Fenrir), a fleet management agent (Gleipnir), and a workstation client (Tyr).
 
 ## 🏗 System Architecture
 
 ```mermaid
 graph TB
     subgraph "High Security Zone (Offline)"
-        RC[Root CA Instance]
+        RC[Fenrir Root Instance]
         RK[(Root CA Keys)]
         RC --- RK
     end
 
     subgraph "DMZ / Internal Network (Online)"
-        SC[SSH CA Server]
+        SC[Fenrir Server]
         DB[(SQLite DB)]
         IK[(Intermediate Keys)]
         SC --- DB
@@ -21,13 +21,13 @@ graph TB
     end
 
     subgraph "Staff Workstations"
-        CL[ssh-ca-client]
+        CL[Tyr Client]
         SK[Hardware Security Key]
         CL --- SK
     end
 
     subgraph "Fleet Devices (Debian arm64)"
-        AG[ssh-ca-agent]
+        AG[Gleipnir Agent]
         SH[sshd]
         AG --- SH
     end
@@ -43,14 +43,13 @@ graph TB
 
 ### 📝 Project Terminology
 
-To ensure clarity across the ecosystem, we use the following standard terms:
+To ensure clarity across the ecosystem, we use the following Norse-themed components:
 
-| Term | Actor | Component | Use Case |
+| Component | Actor | Use Case | Mythological Tie |
 | :--- | :--- | :--- | :--- |
-| **CA Server** | The Authority | `ssh-ca` | The "Brain". Signs certificates and manages the KRL. |
-| **User Client** | Workstation | `ssh-ca-client` | Used by humans to get certificates to log into servers. |
-| **Host Agent** | Target Device | `ssh-ca-agent` | Used by servers to trust the CA and identify themselves. |
-| **PoP Renewal** | - | - | **Proof-of-Possession**: Renewing a certificate using a registered private key. |
+| **Fenrir** | The Authority | The "Brain" (Server/Web UI). Signs certificates and manages the state. | The world-shaking wolf. |
+| **Tyr** | User Client | Workstation tool for humans to get certs and launch SSH. | The God who interfaces with Fenrir. |
+| **Gleipnir** | Host Agent | The "binder" on target devices that ensures they trust the CA. | The unbreakable chain that binds Fenrir. |
 
 ### 🔄 Operational Flows
 
@@ -65,24 +64,24 @@ To ensure clarity across the ecosystem, we use the following standard terms:
 - **Native SSH**: Uses `golang.org/x/crypto/ssh` for safe, standard-compliant certificate signing.
 - **Host & User Keys**: Supports both user authentication and host verification.
 - **MFA & Recovery**: Mandatory TOTP for admins with secure, single-use **Backup Codes**.
-- **Passwordless Sudo**: Custom PAM module (`pam_ssh_ca`) for certificate-based sudo authentication.
+- **Passwordless Sudo**: Custom PAM module (`pam_fenrir`) for certificate-based sudo authentication.
 - **Hardware Security**: Infrastructure for **PKCS#11 (HSM/YubiKey)** signing to ensure non-extractable CA keys.
 - **Audit Friendly**: Detailed event logs with identity-based auditing.
 
 ## 📦 Installation
-You can use the SSH CA in two ways:
+You can use the Fenrir ecosystem in two ways:
 
 ### 1. Pre-built Binaries (Recommended)
 Download the latest binaries for your platform from the [Releases](https://github.com/SecareLupus/Homelab_SSH_CA/releases) page.
-- `ssh-ca-server-*`: The main CA server.
-- `ssh-ca-client-*`: Command-line tool for users.
-- `ssh-ca-agent-*`: Sync tool for target servers.
-- `ssh-ca-gui-*`: Desktop control center (Linux).
+- `fenrir-*`: The main CA server.
+- `tyr-*`: Command-line tool for users.
+- `gleipnir-*`: Sync tool for target servers (formerly gleipnir).
+- `tyr-gui-*`: Desktop control center (Linux).
 
 ### 2. Docker Images
 Pull the official container from GHCR:
 ```bash
-docker pull ghcr.io/secarelupus/ssh-ca:latest
+docker pull ghcr.io/secarelupus/fenrir:latest
 ```
 
 ## 🚀 Deployment Tiers
@@ -104,14 +103,6 @@ Two containers on one host. The Root CA remains stopped except during intermedia
    ```bash
    docker compose up -d
    ```
-
-### 🔌 Tier 2+: Removable Root (USB Backed)
-Same as Tier 2, but the Root keys live on a **removable USB drive**. High protection against host-level storage compromise.
-```bash
-# Set ROOT_DATA_DIR to your USB mount point
-export ROOT_DATA_DIR=/mnt/usb_ca/root-ca-data
-docker compose -f deploy/tier-2-shared-host/docker-compose.yml up root-ca
-```
 
 ### 🏔️ Tier 3: Isolated Root (Max Security)
 The Root CA runs on a dedicated offline machine. Highly recommended for production-grade homelabs.
@@ -144,13 +135,13 @@ Hardware keys can be added to **any tier** to ensure your CA private keys are **
 
 ## 🛠 Configuration
 
-### Client (User) Setup
+### Tyr (User) Setup
 
 1.  Download your certificate from the dashboard.
 2.  Save it to `~/.ssh/id_ed25519-cert.pub`.
 3.  Add the Certificate Authority's public key (from the dashboard) to your known hosts if you want to trust hosts signed by this CA.
 
-### Server (Host) Setup
+### Gleipnir (Host) Setup
 
 To allow users signed by this CA to log in:
 
@@ -161,28 +152,10 @@ To allow users signed by this CA to log in:
     TrustedUserCAKeys /etc/ssh/user_ca.pub
     ```
 4.  Restart sshd: `sudo systemctl restart sshd`.
-### Advanced Hardening
-
-| Feature | Env Variable | Description |
-| :--- | :--- | :--- |
-| **Hardened Sync** | `CA_HARDENED_SYNC=true` | Requires API Key to pull KRL/CA Keys. |
-| **PKCS#11** | `PKCS11_MODULE` | Path to your HSM/YubiKey shared library. |
-
-### PAM Module Setup (Passwordless Sudo)
-
-To use your SSH certificate for sudo authentication:
-
-1. Install dependencies: `sudo apt install libpam0g-dev` (on Debian/Ubuntu).
-2. Build the module: `go build -buildmode=c-shared -o bin/pam_ssh_ca.so ./cmd/pam-ssh-ca`
-2. Install to `/lib/security/`.
-3. Configure `/etc/pam.d/sudo`:
-   ```bash
-   auth sufficient pam_ssh_ca.so
-   ```
 
 ## Development
 
-- **Database**: SQLite (`ssh-ca.db`)
+- **Database**: SQLite (`fenrir.db`)
 - **Keys**: Stored in `ca-keys/` directory (created on first run).
 
 ## License

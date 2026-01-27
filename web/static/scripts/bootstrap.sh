@@ -8,7 +8,7 @@ set -e
 CA_URL="${CA_URL:-}"
 API_KEY="${API_KEY:-}"
 BIN_DIR="/usr/local/bin"
-AGENT_BIN="$BIN_DIR/ssh-ca-agent"
+AGENT_BIN="$BIN_DIR/gleipnir"
 SSHD_CONFIG="/etc/ssh/sshd_config"
 CA_PUB_PATH="/etc/ssh/trusted-user-ca-keys.pem"
 
@@ -63,10 +63,10 @@ if [ -z "$CA_URL" ] || [ -z "$API_KEY" ]; then
 fi
 
 # 2. Download Agent
-log "Downloading ssh-ca-agent..."
+log "Downloading gleipnir..."
 # In a real scenario, we'd fetch the binary for the specific architecture.
-# For this demo, we assume the server serves it at /static/bin/ssh-ca-agent
-curl -sfL "$CA_URL/static/bin/ssh-ca-agent" -o "$AGENT_BIN" || error "Failed to download agent binary"
+# For this demo, we assume the server serves it at /static/bin/gleipnir
+curl -sfL "$CA_URL/static/bin/gleipnir" -o "$AGENT_BIN" || error "Failed to download agent binary"
 chmod +x "$AGENT_BIN"
 
 # 3. Register & Enroll

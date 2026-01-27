@@ -4,13 +4,13 @@ COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
 RUN go build -o ssh-ca ./cmd/server
-RUN go build -o ssh-ca-client ./cmd/client
+RUN go build -o tyr ./cmd/client
 
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates openssh-client curl bash
 WORKDIR /app
 COPY --from=builder /app/ssh-ca .
-COPY --from=builder /app/ssh-ca-client .
+COPY --from=builder /app/tyr .
 COPY web/ ./web/
 COPY scripts/test-e2e-suite.sh ./test-e2e-suite.sh
 RUN chmod +x ./test-e2e-suite.sh

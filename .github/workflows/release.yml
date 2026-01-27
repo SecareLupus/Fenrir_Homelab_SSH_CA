@@ -41,48 +41,48 @@ jobs:
           VERSION_RAW=${{ github.ref_name }}
           # Strip 'v' prefix for deb version (e.g. v1.0.0 -> 1.0.0)
           VERSION_DEB=${VERSION_RAW#v}
-          LDFLAGS="-X 'ssh-ca/internal/config.Version=${VERSION_RAW}' -s -w"
+          # Module path in ldflags
+          LDFLAGS="-X 'github.com/SecareLupus/Fenrir/internal/config.Version=${VERSION_RAW}' -s -w"
           
-          # 1. Server Binary (CGO disabled for portability)
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-server-linux-amd64 ./cmd/server
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-server-linux-arm64 ./cmd/server
+          # 1. Fenrir (Server)
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/fenrir-linux-amd64 ./cmd/fenrir
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/fenrir-linux-arm64 ./cmd/fenrir
           
-          # 2. Client CLI
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-client-linux-amd64 ./cmd/client
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-client-linux-arm64 ./cmd/client
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-client-windows-amd64.exe ./cmd/client
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-client-macos-arm64 ./cmd/client
+          # 2. Tyr (Client CLI)
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/tyr-linux-amd64 ./cmd/tyr
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/tyr-linux-arm64 ./cmd/tyr
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/tyr-windows-amd64.exe ./cmd/tyr
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/tyr-macos-arm64 ./cmd/tyr
           
-          # 3. Agent
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-agent-linux-amd64 ./cmd/agent
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-agent-linux-arm64 ./cmd/agent
+          # 3. Gleipnir (Agent)
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/gleipnir-linux-amd64 ./cmd/gleipnir
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/gleipnir-linux-arm64 ./cmd/gleipnir
           
-          # 4. PAM Module (Linux Only, requires CGO)
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -ldflags="$LDFLAGS" -o dist/pam_ssh_ca_amd64.so ./cmd/pam-ssh-ca
-          # CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc go build -buildmode=c-shared -ldflags="$LDFLAGS" -o dist/pam_ssh_ca_arm64.so ./cmd/pam-ssh-ca
+          # 4. PAM Module (pam_fenrir)
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -buildmode=c-shared -ldflags="$LDFLAGS" -o dist/pam_fenrir_amd64.so ./cmd/pam-fenrir
 
-          # 5. GUI Client (Linux amd64 only for now due to complex cross-cgo)
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-gui-linux-amd64 ./cmd/client-gui
+          # 5. Tyr-GUI
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/tyr-gui-linux-amd64 ./cmd/tyr-gui
 
-          # 6. Create Debian Package (.deb)
+          # 6. Create Debian Package (.deb) for Tyr
           echo "Building .deb package..."
           mkdir -p build/deb/DEBIAN build/deb/usr/local/bin build/deb/etc/bash_completion.d
-          cp dist/ssh-ca-client-linux-amd64 build/deb/usr/local/bin/ssh-ca-client
-          cp dist/ssh-ca-gui-linux-amd64 build/deb/usr/local/bin/ssh-ca-gui
-          cp scripts/completion.sh build/deb/etc/bash_completion.d/ssh-ca-client
+          cp dist/tyr-linux-amd64 build/deb/usr/local/bin/tyr
+          cp dist/tyr-gui-linux-amd64 build/deb/usr/local/bin/tyr-gui
+          cp scripts/completion.sh build/deb/etc/bash_completion.d/tyr
           
           cat > build/deb/DEBIAN/control <<EOF
-          Package: homelab-ssh-ca
+          Package: fenrir-tyr
           Version: ${VERSION_DEB}
           Section: utils
           Priority: optional
           Architecture: amd64
           Maintainer: SecareLupus
-          Description: Homelab SSH CA Client and GUI
-           A user-friendly tool for managing SSH certificates and launching authenticated sessions.
+          Description: Tyr Client and GUI for Fenrir SSH CA
+           User-facing tools for interacting with Fenrir SSH CA.
           EOF
           
-          dpkg-deb --root-owner-group --build build/deb dist/homelab-ssh-ca_${VERSION_RAW}_amd64.deb
+          dpkg-deb --root-owner-group --build build/deb dist/fenrir-tyr_${VERSION_RAW}_amd64.deb
 
       - name: Generate Checksums
         run: |
@@ -119,16 +119,17 @@ jobs:
 
       - name: Set lower case owner name
         run: |
-          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
+          # Use GITHUB_REPOSITORY_OWNER for the base and convert to lowercase
+          echo "OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> ${GITHUB_ENV}
 
-      - name: Build and push Server Image
+      - name: Build and push Fenrir Image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ env.REPO_LC }}/ssh-ca:latest
-            ghcr.io/${{ env.REPO_LC }}/ssh-ca:${{ github.ref_name }}
+            ghcr.io/${{ env.OWNER_LC }}/fenrir:latest
+            ghcr.io/${{ env.OWNER_LC }}/fenrir:${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Bash/Zsh Completion for ssh-ca-client
+# Bash/Zsh Completion for tyr
 
 _ssh_ca_client_completion() {
     local cur prev opts
@@ -26,4 +26,4 @@ _ssh_ca_client_completion() {
     fi
 }
 
-complete -F _ssh_ca_client_completion ssh-ca-client
+complete -F _ssh_ca_client_completion tyr

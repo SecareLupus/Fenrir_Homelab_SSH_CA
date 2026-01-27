@@ -1,6 +1,6 @@
 version: '3.8'
 services:
-  ca-server:
+  fenrir-server:
     build:
       context: .
       dockerfile: Dockerfile.test
@@ -8,7 +8,7 @@ services:
       - CA_PASSPHRASE=test-passphrase
       - DB_ENCRYPTION_KEY=test-db-key
       - BIND_ADDR=:8080
-      - DB_PATH=/app/data/ssh-ca.db
+      - DB_PATH=/app/data/fenrir.db
       - KEY_PATH=/app/data/ca-keys
       - CA_HARDENED_SYNC=false
     volumes:
@@ -30,14 +30,14 @@ services:
              echo 'PubkeyAuthentication yes' >> /etc/ssh/sshd_config &&
              echo 'TrustedUserCAKeys /etc/ssh/user_ca.pub' >> /etc/ssh/sshd_config &&
              echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config &&
-             # Wait for CA server, then fetch pubkey
-             until curl -sf http://ca-server:8080/api/v1/ca/user > /etc/ssh/user_ca.pub; do sleep 1; done &&
+             # Wait for Fenrir server, then fetch pubkey
+             until curl -sf http://fenrir-server:8080/api/v1/ca/user > /etc/ssh/user_ca.pub; do sleep 1; done &&
              # Create a test user for SSH
              adduser -D testuser &&
              passwd -d testuser &&
              /usr/sbin/sshd -D -e"
     depends_on:
-      ca-server:
+      fenrir-server:
         condition: service_healthy
 
   test-runner:
@@ -45,11 +45,11 @@ services:
       context: .
       dockerfile: Dockerfile.test
     environment:
-      - CA_SERVER_URL=http://ca-server:8080
+      - CA_SERVER_URL=http://fenrir-server:8080
       - TARGET_HOST=ssh-target
     entrypoint: [ "./test-e2e-suite.sh" ]
     depends_on:
-      ca-server:
+      fenrir-server:
         condition: service_healthy
       ssh-target:
         condition: service_started

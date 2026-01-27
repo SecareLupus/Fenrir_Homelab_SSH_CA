@@ -1,19 +1,18 @@
 # Release Process
 
-This document outlines the release process for the SSH CA ecosystem, including the server, client binaries, agent, and PAM modules.
+This document outlines the release process for the Fenrir SSH CA ecosystem, including the server (Fenrir), client binaries (Tyr), agent (Gleipnir), and PAM modules (pam_fenrir).
 
 ## 1. Versioning Strategy
 We use [Semantic Versioning (SemVer)](https://semver.org/).
-- **Major**: Breaking changes (e.g., protocol changes, database migrations that are not backward compatible).
-- **Minor**: New features (e.g., new MFA methods, new CLI commands).
+- **Major**: Breaking changes.
+- **Minor**: New features.
 - **Patch**: Bug fixes and security updates.
 
 ## 2. Release Steps
 
 ### Step 1: Preparation
 1.  Ensure `TODO.md` is updated and key features for the release are finished.
-2.  Update the `CHANGELOG.md` (if we start one) or use GitHub's automated release notes.
-3.  Verify that the current `main` branch passes all tests.
+2.  Verify that the current `main` branch passes all tests.
 
 ### Step 2: Tagging
 Create a signed git tag for the release:
@@ -26,46 +25,38 @@ git push origin v1.0.0
 The GitHub Action (`release.yml`) will automatically trigger when a tag matching `v*` is pushed. It will:
 - Build binaries for Linux (amd64/arm64), Windows (amd64), and macOS (arm64).
 - Compile the PAM shared library (`.so`).
-- Build and push multi-arch Docker images to `ghcr.io`.
-- Create a **Draft Release** on GitHub with all binaries attached as artifacts.
+- Build and push multi-arch Docker images to `ghcr.io/secarelupus/fenrir`.
+- Create a **Draft Release** on GitHub.
 
 ### Step 4: Verification
 1.  Download the binaries from the Draft Release.
-2.  Test the `ssh-ca-server` in a staging environment.
-3.  Test the `ssh-ca-client` and `ssh-ca-agent` on at least one Linux and one Windows machine.
-4.  Verify the checksums: `sha256sum -c checksums.txt`.
+2.  Test the `fenrir` server in a staging environment.
+3.  Test `tyr` and `gleipnir` on your target machines.
+4.  Verify checksums: `sha256sum -c checksums.txt`.
 
 ### Step 5: Publishing
 1.  Once verified, edit the GitHub Release.
-2.  Review the automated release notes.
-3.  Click **Publish Release**.
+2.  Click **Publish Release**.
 
 ## 3. Artifact Distribution
 
-| Artifact | Distribution Method |
-| :--- | :--- |
-| **Server** | Docker Image (`ghcr.io`), Linux Binary |
-| **Client (CLI)** | GitHub Release Binaries (Win/Mac/Linux) |
-| **Agent** | GitHub Release Binaries (Linux/ARM64) |
-| **GUI Client** | GitHub Release Binaries (Linux) |
-| **PAM Module** | GitHub Release Shared Library (`.so`) |
+| Component | Artifact Name | Description |
+| :--- | :--- | :--- |
+| **Server** | `fenrir` | Docker Image (`ghcr.io`) & Linux Binary |
+| **Client (CLI)** | `tyr` | GitHub Release Binaries (Win/Mac/Linux) |
+| **Agent** | `gleipnir` | GitHub Release Binaries (Linux/ARM64) |
+| **GUI Client** | `tyr-gui` | GitHub Release Binaries (Linux) |
+| **PAM Module** | `pam_fenrir` | Shared Library (`.so`) |
 
 ## 5. Air-Gapped / Tier 3 Deployment
-For isolated machines that cannot reach GitHub Container Registry:
+For isolated machines that cannot reach GHCR:
 1.  **On an online machine**:
     ```bash
-    docker pull ghcr.io/secarelupus/ssh-ca:v1.0.0
-    docker save ghcr.io/secarelupus/ssh-ca:v1.0.0 | gzip > ssh-ca-v1.0.0.tar.gz
+    docker pull ghcr.io/secarelupus/fenrir:v1.0.0
+    docker save ghcr.io/secarelupus/fenrir:v1.0.0 | gzip > fenrir-v1.0.0.tar.gz
     ```
-2.  **Move the tarball** to the offline host via encrypted USB.
+2.  **Move the tarball** via encrypted USB.
 3.  **On the offline host**:
     ```bash
-    docker load < ssh-ca-v1.0.0.tar.gz
+    docker load < fenrir-v1.0.0.tar.gz
     ```
-4.  Update your `docker-compose.root.yml` to point to the loaded image.
-
-## 6. Future Improvements
-- **Debian Repository**: Automate `.deb` package creation and hosting.
-- **Homebrew Tap**: Create a formula for macOS users.
-- **Windows Installer**: Create an `.msi` or `.exe` installer for the GUI client.
-- **Auto-Update**: Implement version check and self-update in the client/agent.

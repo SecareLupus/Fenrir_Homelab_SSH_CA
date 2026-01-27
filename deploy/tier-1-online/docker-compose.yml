@@ -1,16 +1,15 @@
 services:
-  ssh-ca:
+  fenrir:
     # To use a specific version, set the TAG environment variable: export TAG=v1.0.0
-    image: ghcr.io/secarelupus/ssh-ca:${TAG:-latest}
-    # build: ../..
-    container_name: ssh-ca-standalone
+    image: ghcr.io/secarelupus/fenrir:${TAG:-latest}
+    container_name: fenrir-standalone
     ports:
       - "8080:8080"
     environment:
       - CA_MODE=online
       - BIND_ADDR=:8080
       - KEY_PATH=/data/keys
-      - DB_PATH=/data/ssh-ca.db
+      - DB_PATH=/data/fenrir.db
     volumes:
       - ./data:/data
     restart: unless-stopped

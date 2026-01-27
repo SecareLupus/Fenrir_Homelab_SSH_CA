@@ -1,16 +1,16 @@
 # To be run on the ONLINE server.
 services:
   intermediate-ca:
-    image: ghcr.io/secarelupus/ssh-ca:${TAG:-latest}
+    image: ghcr.io/secarelupus/fenrir:${TAG:-latest}
     # build: ../..
-    container_name: ssh-ca-online
+    container_name: fenrir-online
     ports:
       - "8080:8080"
     environment:
       - CA_MODE=online
       - BIND_ADDR=:8080
       - KEY_PATH=/data/keys
-      - DB_PATH=/data/ssh-ca.db
+      - DB_PATH=/data/fenrir.db
     volumes:
       - ./online-data:/data
     restart: unless-stopped

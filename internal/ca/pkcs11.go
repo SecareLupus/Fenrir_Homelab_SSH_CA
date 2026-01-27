@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"log"
 
-	"ssh-ca/internal/config"
+	 "github.com/SecareLupus/Fenrir/internal/config"
 
 	"golang.org/x/crypto/ssh"
 )

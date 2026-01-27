@@ -10,19 +10,19 @@ RUN go mod download
 # Copy the rest of the code
 COPY . .
 
-# Build the server binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o ssh-ca ./cmd/server
+# Build the server binary (Fenrir)
+RUN CGO_ENABLED=0 GOOS=linux go build -o fenrir ./cmd/fenrir
 
 # Final stage
 FROM alpine:latest
 
 WORKDIR /app
 
-# Install runtime dependencies (sqlite needs nothing for modernc, but we might want ssh tools)
+# Install runtime dependencies
 RUN apk add --no-cache ca-certificates openssh-client
 
 # Copy the binary from builder
-COPY --from=builder /app/ssh-ca .
+COPY --from=builder /app/fenrir .
 
 # Copy web assets
 COPY web/ ./web/
@@ -31,4 +31,4 @@ COPY web/ ./web/
 EXPOSE 8080
 
 # Run the app
-CMD ["./ssh-ca"]
+CMD ["./fenrir"]

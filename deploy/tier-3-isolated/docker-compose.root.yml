@@ -1,24 +1,24 @@
 # To be run on an ISOLATED/OFFLINE host.
 # Build the binary first on an online machine:
-# CGO_ENABLED=0 go build -o ssh-ca ./cmd/server
+# CGO_ENABLED=0 go build -o fenrir ./cmd/server
 # Then move the binary and Dockerfile.binary to the offline host.
 
 services:
   root-ca:
     # It is recommended to side-load the official image (see docs/RELEASE_PROCESS.md)
     # to ensure consistency with the online versions.
-    image: ghcr.io/secarelupus/ssh-ca:${TAG:-latest}
+    image: ghcr.io/secarelupus/fenrir:${TAG:-latest}
     # build:
     #   context: ../..
     #   dockerfile: Dockerfile.binary
-    container_name: ssh-ca-root
+    container_name: fenrir-root
     ports:
       - "8080:8080"
     environment:
       - CA_MODE=offline
       - BIND_ADDR=:8080
       - KEY_PATH=/data/keys
-      - DB_PATH=/data/ssh-ca.db
+      - DB_PATH=/data/fenrir.db
     volumes:
       - ./root-ca-data:/data
     restart: "no"

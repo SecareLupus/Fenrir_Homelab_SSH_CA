@@ -7,7 +7,7 @@ Design an **open-source, homelab-friendly SSH Certificate Authority** with a **W
 - Good security defaults
 - Clear upgrade paths (without becoming Vault / full zero-trust)
 
-Transparent, zero-touch renewal via the `ssh-ca-agent` is a **core feature of v1**.
+Transparent, zero-touch renewal via the `gleipnir` is a **core feature of v1**.
 
 ---
 

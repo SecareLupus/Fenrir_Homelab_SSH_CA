@@ -10,7 +10,7 @@
 package web
 
 import (
-	"ssh-ca/internal/db"
+	 "github.com/SecareLupus/Fenrir/internal/db"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 )

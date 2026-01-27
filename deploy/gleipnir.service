@@ -1,0 +1,11 @@
+[Unit]
+Description=Gleipnir - Fenrir SSH CA Trust Agent
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/gleipnir -url http://YOUR_CA_SERVER:8080
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

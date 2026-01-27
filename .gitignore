@@ -1,9 +1,8 @@
 # Binaries & Build Artifacts
-ssh-ca
-ssh-ca-client
-ssh-ca-server
-ssh-ca-agent
-ssh-ca-gui
+fenrir
+tyr
+gleipnir
+tyr-gui
 bin/
 build/
 *.so

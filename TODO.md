@@ -1,4 +1,4 @@
-# SSH CA - Implementation Todo List (V2)
+# Fenrir SSH CA - Implementation Todo List (V2)
 
 ## Phase 6: Core Refinement & Security
 - [x] **Admin Role Refactor**: Replace hardcoded `username == "admin"` checks with database-backed role lookups.

@@ -26,7 +26,7 @@ for platform in "${platforms[@]}"; do
     GOOS=${PLATFORM_SPLIT[0]}
     GOARCH=${PLATFORM_SPLIT[1]}
     
-    OUTPUT_NAME="ssh-ca-client-$GOOS-$GOARCH"
+    OUTPUT_NAME="tyr-$GOOS-$GOARCH"
     if [ $GOOS = "windows" ]; then
         OUTPUT_NAME+='.exe'
     fi
@@ -36,7 +36,7 @@ for platform in "${platforms[@]}"; do
     GOOS=$GOOS GOARCH=$GOARCH go build -o "$BIN_DIR/$OUTPUT_NAME" ./cmd/client
     
     # Build GUI (might fail on some cross-builds DUE TO CGO, but we'll try)
-    GUI_NAME="ssh-ca-gui-$GOOS-$GOARCH"
+    GUI_NAME="tyr-gui-$GOOS-$GOARCH"
     if [ $GOOS = "windows" ]; then
         GUI_NAME+='.exe'
     fi
@@ -62,11 +62,11 @@ mkdir -p "$DEB_ROOT/usr/local/bin"
 mkdir -p "$DEB_ROOT/etc/bash_completion.d"
 mkdir -p "$DEB_ROOT/DEBIAN"
 
-cp "$BIN_DIR/ssh-ca-client-linux-amd64" "$DEB_ROOT/usr/local/bin/ssh-ca-client"
-if [ -f "$BIN_DIR/ssh-ca-gui-linux-amd64" ]; then
-    cp "$BIN_DIR/ssh-ca-gui-linux-amd64" "$DEB_ROOT/usr/local/bin/ssh-ca-gui"
+cp "$BIN_DIR/tyr-linux-amd64" "$DEB_ROOT/usr/local/bin/tyr"
+if [ -f "$BIN_DIR/tyr-gui-linux-amd64" ]; then
+    cp "$BIN_DIR/tyr-gui-linux-amd64" "$DEB_ROOT/usr/local/bin/tyr-gui"
 fi
-cp "scripts/completion.sh" "$DEB_ROOT/etc/bash_completion.d/ssh-ca-client"
+cp "scripts/completion.sh" "$DEB_ROOT/etc/bash_completion.d/tyr"
 
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
 Package: homelab-ssh-ca

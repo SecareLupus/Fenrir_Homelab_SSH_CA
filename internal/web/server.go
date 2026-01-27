@@ -21,10 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ssh-ca/internal/auth"
-	"ssh-ca/internal/ca"
-	"ssh-ca/internal/config"
-	"ssh-ca/internal/db"
+	 "github.com/SecareLupus/Fenrir/internal/auth"
+	 "github.com/SecareLupus/Fenrir/internal/ca"
+	 "github.com/SecareLupus/Fenrir/internal/config"
+	 "github.com/SecareLupus/Fenrir/internal/db"
 
 	"crypto/rand"
 	"encoding/base64"
