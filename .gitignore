@@ -2,7 +2,7 @@
 fenrir
 tyr
 gleipnir
-tyr-gui
+/tyr-gui
 bin/
 build/
 *.so

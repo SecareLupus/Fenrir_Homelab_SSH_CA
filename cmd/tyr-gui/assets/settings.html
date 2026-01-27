@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tyr Settings</title>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --surface: rgba(30, 41, 59, 0.7);
+            --primary: #3b82f6;
+            --accent: #10b981;
+            --warning: #f59e0b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', -apple-system, sans-serif;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            background: radial-gradient(circle at top right, #1e293b, #0b0f19);
+        }
+
+        .container {
+            width: 600px;
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            padding: 2rem;
+        }
+
+        h2 {
+            margin: 0 0 1.5rem 0;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            color: white;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .btn {
+            background: var(--primary);
+            border: none;
+            color: white;
+            padding: 0.875rem 1.5rem;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.95rem;
+            width: 100%;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            color: var(--accent);
+        }
+
+        .alert-error {
+            background: rgba(244, 63, 94, 0.1);
+            border: 1px solid rgba(244, 63, 94, 0.2);
+            color: #f43f5e;
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .help-text {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-dot.connected {
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .status-dot.disconnected {
+            background: #64748b;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>⚙️ Tyr Settings</h2>
+
+        <div id="alert-container"></div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('login')">Login</div>
+            <div class="tab" onclick="switchTab('apikey')">API Key</div>
+            <div class="tab" onclick="switchTab('advanced')">Advanced</div>
+        </div>
+
+        <!-- Login Tab -->
+        <div class="tab-content active" id="tab-login">
+            <div class="form-group">
+                <label>Fenrir Server URL</label>
+                <input type="text" id="server-url-login" value="http://localhost:8080"
+                    placeholder="http://fenrir.example.com:8080">
+            </div>
+
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="username" placeholder="alice">
+            </div>
+
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="password" placeholder="••••••••">
+            </div>
+
+            <div id="mfa-container" style="display: none;">
+                <div class="form-group">
+                    <label>MFA Code (if enabled)</label>
+                    <input type="text" id="mfa-code" placeholder="123456">
+                    <div class="help-text">Enter your TOTP code or backup code</div>
+                </div>
+            </div>
+
+            <button class="btn" onclick="loginWithPassword()">Login & Save</button>
+
+            <div class="status-indicator" id="login-status" style="display: none;">
+                <div class="status-dot connected"></div>
+                <span>Authenticated</span>
+            </div>
+        </div>
+
+        <!-- API Key Tab -->
+        <div class="tab-content" id="tab-apikey">
+            <div class="form-group">
+                <label>Fenrir Server URL</label>
+                <input type="text" id="server-url-apikey" value="http://localhost:8080"
+                    placeholder="http://fenrir.example.com:8080">
+            </div>
+
+            <div class="form-group">
+                <label>API Key</label>
+                <input type="password" id="api-key" placeholder="Enter your API key">
+                <div class="help-text">Generate an API key from the Fenrir dashboard</div>
+            </div>
+
+            <button class="btn" onclick="saveAPIKey()">Save Configuration</button>
+        </div>
+
+        <!-- Advanced Tab -->
+        <div class="tab-content" id="tab-advanced">
+            <div class="form-group">
+                <label>SSH Key Path</label>
+                <input type="text" id="key-path" placeholder="~/.ssh/id_ed25519">
+                <div class="help-text">Path to your SSH private key</div>
+            </div>
+
+            <div class="form-group">
+                <label>Key Type</label>
+                <input type="text" id="key-type" value="ed25519" placeholder="ed25519 or ed25519-sk">
+                <div class="help-text">Use ed25519-sk for hardware security keys</div>
+            </div>
+
+            <button class="btn btn-secondary" onclick="saveAdvanced()">Save Advanced Settings</button>
+
+            <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border);">
+                <button class="btn btn-secondary" onclick="clearConfig()">Clear All Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alert-container');
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => container.innerHTML = '', 5000);
+        }
+
+        async function loginWithPassword() {
+            const serverURL = document.getElementById('server-url-login').value.trim();
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const mfaCode = document.getElementById('mfa-code').value.trim();
+
+            if (!serverURL || !username || !password) {
+                showAlert('Please fill in all required fields', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        server_url: serverURL,
+                        username: username,
+                        password: password,
+                        mfa_code: mfaCode
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.mfa_required) {
+                    document.getElementById('mfa-container').style.display = 'block';
+                    showAlert('MFA required. Please enter your code.', 'warning');
+                    return;
+                }
+
+                if (!response.ok) {
+                    showAlert(data.error || 'Login failed', 'error');
+                    return;
+                }
+
+                showAlert('✓ Successfully authenticated! Close this window to continue.', 'success');
+                document.getElementById('login-status').style.display = 'flex';
+
+                // Notify parent window to refresh
+                setTimeout(() => window.location.href = '/', 1500);
+            } catch (err) {
+                showAlert('Connection failed: ' + err.message, 'error');
+            }
+        }
+
+        async function saveAPIKey() {
+            const serverURL = document.getElementById('server-url-apikey').value.trim();
+            const apiKey = document.getElementById('api-key').value.trim();
+
+            if (!serverURL || !apiKey) {
+                showAlert('Please fill in all fields', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        server_url: serverURL,
+                        api_key: apiKey
+                    })
+                });
+
+                if (response.ok) {
+                    showAlert('✓ Configuration saved! Close this window to continue.', 'success');
+                    setTimeout(() => window.location.href = '/', 1500);
+                } else {
+                    showAlert('Failed to save configuration', 'error');
+                }
+            } catch (err) {
+                showAlert('Error: ' + err.message, 'error');
+            }
+        }
+
+        async function saveAdvanced() {
+            const keyPath = document.getElementById('key-path').value.trim();
+            const keyType = document.getElementById('key-type').value.trim();
+
+            const response = await fetch('/api/config/advanced', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    key_path: keyPath,
+                    key_type: keyType
+                })
+            });
+
+            if (response.ok) {
+                showAlert('✓ Advanced settings saved', 'success');
+            } else {
+                showAlert('Failed to save settings', 'error');
+            }
+        }
+
+        async function clearConfig() {
+            if (confirm('Are you sure you want to clear all saved settings?')) {
+                await fetch('/api/config', { method: 'DELETE' });
+                showAlert('Settings cleared', 'success');
+                setTimeout(() => location.reload(), 1000);
+            }
+        }
+
+        // Load current config on page load
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+
+                if (config.server_url) {
+                    document.getElementById('server-url-login').value = config.server_url;
+                    document.getElementById('server-url-apikey').value = config.server_url;
+                }
+
+                if (config.key_path) {
+                    document.getElementById('key-path').value = config.key_path;
+                }
+
+                if (config.key_type) {
+                    document.getElementById('key-type').value = config.key_type;
+                }
+
+                if (config.has_api_key) {
+                    document.getElementById('api-key').placeholder = '(saved securely)';
+                }
+            } catch (err) {
+                console.log('No saved config');
+            }
+        }
+
+        loadConfig();
+    </script>
+</body>
+
+</html>
