@@ -114,11 +114,10 @@ docker compose -f deploy/tier-2-shared-host/docker-compose.yml up root-ca
 ```
 
 ### 🏔️ Tier 3: Isolated Root (Max Security)
-The Root CA runs on a dedicated offline machine. CSRs and Certificates are moved via encrypted USB.
-- **Offline Machine**: `deploy/tier-3-isolated/docker-compose.root.yml`
-- **Online Machine**: `deploy/tier-3-isolated/docker-compose.intermediate.yml`
-
-Refer to the [Offline Root Setup Workflow](.agent/workflows/offline-root-setup.md) for detailed configuration steps.
+The Root CA runs on a dedicated offline machine. Highly recommended for production-grade homelabs.
+1. **Prepare**: "Side-load" the Docker image to your offline machine using a USB drive (see `docs/RELEASE_PROCESS.md`).
+2. **Deploy**: Use `deploy/tier-3-isolated/docker-compose.root.yml`.
+3. **Workflow**: Refer to the [Offline Root Setup Workflow](.agent/workflows/offline-root-setup.md) for step-by-step signing instructions.
 
 ## 🛡️ Threat Mitigation Matrix
 

@@ -116,7 +116,11 @@ func (s *Server) loadTemplates() {
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
-	// Re-parse in dev mode for hot reload (optional, skipped for simplicity)
+	// Add global version to data
+	if m, ok := data.(map[string]any); ok {
+		m["Version"] = config.Version
+	}
+
 	if err := s.tmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
 		log.Printf("render error: %v", err)
 		http.Error(w, "Internal Server Error", 500)
@@ -626,6 +630,13 @@ func (s *Server) handleAPIKeyGenerate(w http.ResponseWriter, r *http.Request) {
 // or cloning/re-associating (prod friendly).
 // For this scale, parsing on fly is fine and easiest for avoiding "content" collisions.
 func (s *Server) renderPage(w http.ResponseWriter, page string, data any) {
+	// Add global version to data
+	if m, ok := data.(map[string]any); ok {
+		m["Version"] = config.Version
+	} else if data == nil {
+		data = map[string]any{"Version": config.Version}
+	}
+
 	tmpl, err := template.ParseFiles(
 		filepath.Join("web", "templates", "layout.html"),
 		filepath.Join("web", "templates", page),

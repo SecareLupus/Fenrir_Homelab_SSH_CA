@@ -61,6 +61,26 @@ jobs:
           # 5. GUI Client (Linux amd64 only for now due to complex cross-cgo)
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/ssh-ca-gui-linux-amd64 ./cmd/client-gui
 
+          # 6. Create Debian Package (.deb)
+          echo "Building .deb package..."
+          mkdir -p build/deb/DEBIAN build/deb/usr/local/bin build/deb/etc/bash_completion.d
+          cp dist/ssh-ca-client-linux-amd64 build/deb/usr/local/bin/ssh-ca-client
+          cp dist/ssh-ca-gui-linux-amd64 build/deb/usr/local/bin/ssh-ca-gui
+          cp scripts/completion.sh build/deb/etc/bash_completion.d/ssh-ca-client
+          
+          cat > build/deb/DEBIAN/control <<EOF
+          Package: homelab-ssh-ca
+          Version: ${{ github.ref_name }}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: SecareLupus
+          Description: Homelab SSH CA Client and GUI
+           A user-friendly tool for managing SSH certificates and launching authenticated sessions.
+          EOF
+          
+          dpkg-deb --root-owner-group --build build/deb dist/homelab-ssh-ca_${{ github.ref_name }}_amd64.deb
+
       - name: Generate Checksums
         run: |
           cd dist

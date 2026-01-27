@@ -7,7 +7,7 @@ Design an **open-source, homelab-friendly SSH Certificate Authority** with a **W
 - Good security defaults
 - Clear upgrade paths (without becoming Vault / full zero-trust)
 
-Transparent, zero-touch renewal is explicitly **out of scope for v1**, but the architecture must support it later.
+Transparent, zero-touch renewal via the `ssh-ca-agent` is a **core feature of v1**.
 
 ---
 
@@ -297,21 +297,22 @@ No embedded policy language in v1.
 ## MVP Feature Set
 
 1. Web UI (admin + self-service)
-2. SSH user certificate issuance & renewal
+2. SSH user certificate issuance & renewal (including PoP)
 3. KRL management
-4. Host certificate support (Core feature)
-5. Minimal CLI
+4. Host certificate & Fleets (Host Agent)
+5. Robust CLI & GUI Clients
+6. PAM Module (Passwordless Sudo)
+7. Hardware Security (PKCS#11)
+8. Multi-architecture Release Pipeline
 
 ---
 
 ## Future Extensions (Non-Goals for v1)
 
-- Transparent renewal daemon
-- PAM integration
+- OIDC / SSO Integration
 - mTLS-based client auth
-- OIDC / SSO
-- Hardware-backed CA keys
-- Policy DSL
+- Advanced Policy DSL
+- Native Windows/macOS Installers (.msi / .pkg)
 
 ---
 
