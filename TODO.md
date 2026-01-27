@@ -7,9 +7,9 @@
 - [x] **API Documentation**: Generate Swagger/OpenAPI specifications for all endpoints.
 
 ## Phase 7: Enterprise Integration
-- [ ] **OIDC/SSO Support**: Integrate with Authentik, Authelia, GitHub, or Google for Web UI login.
-- [ ] **WebAuthn Support**: Direct browser support for hardware keys (YubiKey/TouchID) as a primary factor.
-- [ ] **Audit Log Webhooks**: Send security events to Slack or Discord.
+- [x] **OIDC/SSO Support**: Integrate with Authentik, Authelia, GitHub, or Google for Web UI login.
+- [x] **WebAuthn Support**: Direct browser support for hardware keys (YubiKey/TouchID) as a primary factor.
+- [x] **Audit Log Webhooks**: Send security events to Slack or Discord.
 
 ## Phase 8: Fleet Operations & Monitoring
 - [x] **Host Inventory Dashboard**: View all registered hosts and their status.
@@ -21,9 +21,13 @@
 - [x] **Automated Release Pipeline**: GitHub Actions for multi-platform binaries and Docker.
 - [x] **Linux Distribution**: Automated `.deb` package creation.
 - [x] **Version Injection**: Compile-time versioning via `ldflags`.
-- [ ] **Native Installers (Windows/Mac)**: Create `.msi` or `.pkg` installers.
-
-## Phase 10: Quality Assurance
-- [x] **E2E Integration Tests**: Automated tests using Docker.
-- [x] **Release Process Documentation**: Formalized steps for tagging and side-loading.
-- [x] **Security Review**: Deep audit of intermediate key handling.
+25: 
+26: ## Phase 10: Quality Assurance (Release v1.0.0 Ready)
+27: - [x] **E2E Integration Tests**: Automated tests using Docker.
+28: - [x] **Release Process Documentation**: Formalized steps for tagging and side-loading.
+29: - [x] **Security Review**: Deep audit of intermediate key handling.
+30: 
+31: ## 🚀 Future Roadmap (Post v1.0.0)
+32: - [ ] **Native Installers (Windows/Mac)**: Create `.msi` or `.pkg` installers for better desktop integration.
+33: - [ ] **Credential Auto-Renewal**: Background daemon for Tyr to automatically renew certs before expiry.
+34: - [ ] **Hardware CA Backend**: Direct PKCS#11 support for the Fenrir server to sign using HSMs.
