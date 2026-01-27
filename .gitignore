@@ -9,6 +9,7 @@ build/
 *.so
 *.o
 *.a
+*.h
 *.exe
 
 # Database
