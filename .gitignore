@@ -1,0 +1,47 @@
+# Binaries & Build Artifacts
+ssh-ca
+ssh-ca-client
+ssh-ca-server
+ssh-ca-agent
+ssh-ca-gui
+bin/
+build/
+*.so
+*.o
+*.a
+*.exe
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Environment
+.env
+.env.local
+
+# Keys (local development/testing)
+ca-keys/
+*.pem
+*.pub
+id_ed25519*
+id_rsa*
+id_ecdsa*
+authorized_keys
+known_hosts
+
+# Go
+vendor/
+go.work
+go.work.sum
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
