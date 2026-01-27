@@ -11,6 +11,7 @@ require (
 	github.com/xlzd/gotp v0.1.0
 	golang.org/x/crypto v0.46.0
 	golang.org/x/oauth2 v0.34.0
+	golang.org/x/term v0.38.0
 	modernc.org/sqlite v1.40.1
 )
 

@@ -17,7 +17,8 @@
 - [x] **Prometheus Metrics**: Export signing activity and metrics.
 
 ## Phase 9: Client UX & Distribution
-- [x] **Desktop Client Polish**: Enhance `client-gui` with system tray integration.
+- [x] **Desktop Client Polish**: Enhance `tyr-gui` with system tray integration and login/settings UI.
+- [x] **Client Authentication**: Implement username/password login and config persistence for `tyr` and `tyr-gui`.
 - [x] **Automated Release Pipeline**: GitHub Actions for multi-platform binaries and Docker.
 - [x] **Linux Distribution**: Automated `.deb` package creation.
 - [x] **Version Injection**: Compile-time versioning via `ldflags`.

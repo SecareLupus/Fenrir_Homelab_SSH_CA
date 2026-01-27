@@ -21,10 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/auth"
-	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/ca"
-	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
-	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/db"
+	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/auth"
+	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/ca"
+	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
+	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/db"
 
 	"crypto/rand"
 	"encoding/base64"
@@ -146,6 +146,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/mfa/setup", s.handleMFASetup)
 	s.mux.HandleFunc("/cert/request", s.handleCertRequest)
 	s.mux.HandleFunc("/api/keys/generate", s.handleAPIKeyGenerate)
+	s.mux.HandleFunc("/api/auth/login", s.handleAPIAuthLogin)
 	s.mux.HandleFunc("/admin/users", s.handleAdminUsers)
 	s.mux.HandleFunc("/admin/users/toggle", s.handleAdminUserToggle)
 	s.mux.HandleFunc("/admin/audit", s.handleAdminAudit)
@@ -623,6 +624,94 @@ func (s *Server) handleAPIKeyGenerate(w http.ResponseWriter, r *http.Request) {
 		"NewAPIKey": apiKey,
 		"UserCAKey": string(ssh.MarshalAuthorizedKey(s.ca.GetUserCAPublicKey())),
 		"HostCAKey": string(ssh.MarshalAuthorizedKey(s.ca.GetHostCAPublicKey())),
+	})
+}
+
+// handleAPIAuthLogin authenticates a CLI client via username/password and returns an API key
+func (s *Server) handleAPIAuthLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		TOTPCode string `json:"totp_code,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", 400)
+		return
+	}
+
+	// 1. Validate username and password
+	hash, err := s.db.GetUserHash(req.Username)
+	if err != nil || !auth.CheckPassword(req.Password, hash) {
+		http.Error(w, "Invalid credentials", 401)
+		return
+	}
+
+	// 2. Check if user is enabled
+	if !s.db.IsUserEnabled(req.Username) {
+		http.Error(w, "User account disabled", 403)
+		return
+	}
+
+	// 3. Check MFA if enabled
+	mfaSecret, _ := s.db.GetUserMFASecret(req.Username)
+	if mfaSecret != "" {
+		if req.TOTPCode == "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"error":        "MFA required",
+				"mfa_required": true,
+			})
+			return
+		}
+
+		// Verify TOTP
+		totp := gotp.NewDefaultTOTP(mfaSecret)
+		if !totp.Verify(req.TOTPCode, time.Now().Unix()) {
+			// Check backup codes
+			hash := auth.HashAPIKey(req.TOTPCode) // Using same hash as API keys
+			valid, _ := s.db.VerifyBackupCode(req.Username, hash)
+			if !valid {
+				http.Error(w, "Invalid MFA code", 401)
+				return
+			}
+		}
+	}
+
+	// 4. Generate API key
+	userId, err := s.db.GetUserID(req.Username)
+	if err != nil {
+		http.Error(w, "User not found", 404)
+		return
+	}
+
+	rawKey := make([]byte, 32)
+	if _, err := rand.Read(rawKey); err != nil {
+		http.Error(w, "Key generation failed", 500)
+		return
+	}
+	apiKey := hex.EncodeToString(rawKey)
+	keyHash := auth.HashAPIKey(apiKey)
+
+	if err := s.db.CreateAPIKey(userId, keyHash, "CLI Generated Key"); err != nil {
+		log.Printf("Error storing API key: %v", err)
+		http.Error(w, "Failed to store key", 500)
+		return
+	}
+
+	// 5. Log the event
+	s.db.LogEvent(&userId, "api_key_cli_generated", "Generated via CLI login")
+
+	// 6. Return the API key
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"api_key": apiKey,
+		"message": "Successfully authenticated. Store this key securely.",
 	})
 }
 

@@ -137,9 +137,44 @@ Hardware keys can be added to **any tier** to ensure your CA private keys are **
 
 ### Tyr (User) Setup
 
-1.  Download your certificate from the dashboard.
-2.  Save it to `~/.ssh/id_ed25519-cert.pub`.
-3.  Add the Certificate Authority's public key (from the dashboard) to your known hosts if you want to trust hosts signed by this CA.
+**Method 1: Direct Login (Easiest for first-time users)**
+
+Run `tyr` with your Fenrir credentials:
+```bash
+tyr --url http://your-fenrir-server:8080 --username yourname
+```
+You'll be prompted for your password. If MFA is enabled, you'll also be prompted for your TOTP code. Tyr will:
+1. Authenticate with Fenrir
+2. Receive a temporary API key
+3. Auto-generate an SSH key pair (if needed)
+4. Enroll the key and receive your certificate
+
+**Method 2: API Key (For automation scripts)**
+
+1. Log into the Fenrir Web UI
+2. Click **"Generate API Key"** on the dashboard
+3. Save the key to a file (e.g., `~/.fenrir-api-key`)
+4. Run:
+   ```bash
+   tyr --url http://your-fenrir-server:8080 --key-file ~/.fenrir-api-key
+   ```
+
+**Method 3: Proof-of-Possession Renewal (Automatic after first enrollment)**
+
+Once your key is enrolled, `tyr` can renew your certificate without credentials:
+```bash
+tyr --url http://your-fenrir-server:8080
+```
+The server will challenge you to prove possession of your private key.
+
+### Tyr GUI Setup
+
+1. **Launch**: Run the `tyr-gui` executable.
+2. **Configure**: On first run, a Settings window will open.
+3. **Login**: Enter your Fenrir URL, username, and password.
+4. **Done**: The app sits in your system tray, manages your certificate lifecycle automatically, and provides a "Quick Connect" launcher.
+
+See [Tyr GUI Authentication Guide](docs/TYR_GUI_AUTHENTICATION.md) for details.
 
 ### Gleipnir (Host) Setup
 

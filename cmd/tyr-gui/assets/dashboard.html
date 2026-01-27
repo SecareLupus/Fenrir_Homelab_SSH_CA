@@ -244,19 +244,23 @@
                 Enter IP, URL, or Hostname to launch a cert-authenticated session.
             </p>
             <div style="position: relative;">
-                <input type="text" class="quick-launch-input" placeholder="e.g. 192.168.1.50 or web-srv-01" id="host-search">
-                <button onclick="quickConnect()" style="position: absolute; right: 8px; top: 6px; background: var(--primary); border: none; color: white; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.8rem;">
+                <input type="text" class="quick-launch-input" placeholder="e.g. 192.168.1.50 or web-srv-01"
+                    id="host-search">
+                <button onclick="quickConnect()"
+                    style="position: absolute; right: 8px; top: 6px; background: var(--primary); border: none; color: white; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.8rem;">
                     Launch
                 </button>
             </div>
-            
+
             <div class="host-list" id="host-list">
                 <div class="info-label" style="margin-bottom: 0.5rem;">Recent or Suggested</div>
-                <div class="host-item" onclick="document.getElementById('host-search').value = 'pi-hole.local'; quickConnect()">
+                <div class="host-item"
+                    onclick="document.getElementById('host-search').value = 'pi-hole.local'; quickConnect()">
                     <span class="host-icon">🖥️</span>
                     <span>pi-hole.local</span>
                 </div>
-                <div class="host-item" onclick="document.getElementById('host-search').value = '10.0.0.5'; quickConnect()">
+                <div class="host-item"
+                    onclick="document.getElementById('host-search').value = '10.0.0.5'; quickConnect()">
                     <span class="host-icon">🖥️</span>
                     <span>10.0.0.5</span>
                 </div>
@@ -299,13 +303,13 @@
                 document.getElementById('fido-overlay').style.display = 'flex';
                 // Poll for completion...
                 const poll = setInterval(async () => {
-                   const r = await fetch('/api/status');
-                   const d = await r.json();
-                   if (d.HasCert) {
-                       clearInterval(poll);
-                       document.getElementById('fido-overlay').style.display = 'none';
-                       updateStatus();
-                   }
+                    const r = await fetch('/api/status');
+                    const d = await r.json();
+                    if (d.HasCert) {
+                        clearInterval(poll);
+                        document.getElementById('fido-overlay').style.display = 'none';
+                        updateStatus();
+                    }
                 }, 1000);
             } else if (resp.ok) {
                 updateStatus();
