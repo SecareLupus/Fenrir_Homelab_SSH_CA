@@ -1,8 +1,8 @@
 # To be run on the ONLINE server.
 services:
   intermediate-ca:
-    build: ../..
-    image: ssh-ca:latest
+    image: ghcr.io/secarelupus/ssh-ca:${TAG:-latest}
+    # build: ../..
     container_name: ssh-ca-online
     ports:
       - "8080:8080"

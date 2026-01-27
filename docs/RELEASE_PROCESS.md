@@ -50,7 +50,21 @@ The GitHub Action (`release.yml`) will automatically trigger when a tag matching
 | **GUI Client** | GitHub Release Binaries (Linux) |
 | **PAM Module** | GitHub Release Shared Library (`.so`) |
 
-## 4. Future Improvements
+## 5. Air-Gapped / Tier 3 Deployment
+For isolated machines that cannot reach GitHub Container Registry:
+1.  **On an online machine**:
+    ```bash
+    docker pull ghcr.io/secarelupus/ssh-ca:v1.0.0
+    docker save ghcr.io/secarelupus/ssh-ca:v1.0.0 | gzip > ssh-ca-v1.0.0.tar.gz
+    ```
+2.  **Move the tarball** to the offline host via encrypted USB.
+3.  **On the offline host**:
+    ```bash
+    docker load < ssh-ca-v1.0.0.tar.gz
+    ```
+4.  Update your `docker-compose.root.yml` to point to the loaded image.
+
+## 6. Future Improvements
 - **Debian Repository**: Automate `.deb` package creation and hosting.
 - **Homebrew Tap**: Create a formula for macOS users.
 - **Windows Installer**: Create an `.msi` or `.exe` installer for the GUI client.

@@ -2,8 +2,8 @@ services:
   # The Offline Root service
   # Only start this to sign/renew/revoke intermediates.
   root-ca:
-    build: ../..
-    image: ssh-ca:latest
+    image: ghcr.io/secarelupus/ssh-ca:${TAG:-latest}
+    # build: ../..
     container_name: ssh-ca-root
     ports:
       - "8081:8080"
@@ -20,8 +20,8 @@ services:
 
   # The Online Intermediate service
   intermediate-ca:
-    build: ../..
-    image: ssh-ca:latest
+    image: ghcr.io/secarelupus/ssh-ca:${TAG:-latest}
+    # build: ../..
     container_name: ssh-ca-online
     ports:
       - "8080:8080"

@@ -5,10 +5,12 @@
 
 services:
   root-ca:
-    build:
-      context: ../..
-      dockerfile: Dockerfile.binary
-    image: ssh-ca-binary:latest
+    # It is recommended to side-load the official image (see docs/RELEASE_PROCESS.md)
+    # to ensure consistency with the online versions.
+    image: ghcr.io/secarelupus/ssh-ca:${TAG:-latest}
+    # build:
+    #   context: ../..
+    #   dockerfile: Dockerfile.binary
     container_name: ssh-ca-root
     ports:
       - "8080:8080"
