@@ -72,7 +72,7 @@ To ensure clarity across the ecosystem, we use the following Norse-themed compon
 You can use the Fenrir ecosystem in two ways:
 
 ### 1. Pre-built Binaries (Recommended)
-Download the latest binaries for your platform from the [Releases](https://github.com/SecareLupus/Homelab_SSH_CA/releases) page.
+Download the latest binaries for your platform from the [Releases](https://github.com/SecareLupus/Fenrir_Homelab_SSH_CA/releases) page.
 - `fenrir-*`: The main CA server.
 - `tyr-*`: Command-line tool for users.
 - `gleipnir-*`: Sync tool for target servers (formerly gleipnir).

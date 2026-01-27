@@ -21,7 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	 "github.com/SecareLupus/Fenrir/internal/client"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/client"
 	"time"
 
 	"github.com/getlantern/systray"

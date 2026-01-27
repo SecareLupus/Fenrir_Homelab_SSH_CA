@@ -15,10 +15,10 @@ import (
 	"log"
 	"os"
 
-	 "github.com/SecareLupus/Fenrir/internal/ca"
-	 "github.com/SecareLupus/Fenrir/internal/config"
-	 "github.com/SecareLupus/Fenrir/internal/db"
-	 "github.com/SecareLupus/Fenrir/internal/web"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/ca"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/db"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/web"
 )
 
 func main() {

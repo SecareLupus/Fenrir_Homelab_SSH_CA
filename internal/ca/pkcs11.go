@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"log"
 
-	 "github.com/SecareLupus/Fenrir/internal/config"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
 
 	"golang.org/x/crypto/ssh"
 )

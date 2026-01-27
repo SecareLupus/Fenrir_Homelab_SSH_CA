@@ -1,4 +1,4 @@
-module github.com/SecareLupus/Fenrir
+module github.com/SecareLupus/Fenrir_Homelab_SSH_CA
 
 go 1.24.0
 

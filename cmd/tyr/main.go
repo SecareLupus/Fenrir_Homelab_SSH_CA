@@ -16,8 +16,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	 "github.com/SecareLupus/Fenrir/internal/client"
-	 "github.com/SecareLupus/Fenrir/internal/config"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/client"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
 )
 
 func main() {

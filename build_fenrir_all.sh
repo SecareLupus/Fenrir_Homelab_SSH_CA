@@ -5,7 +5,7 @@ set -e
 mkdir -p bin
 
 VERSION=${1:-"local-dev"}
-LDFLAGS="-X 'github.com/SecareLupus/Fenrir/internal/config.Version=$VERSION' -s -w"
+LDFLAGS="-X 'github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config.Version=$VERSION' -s -w"
 
 echo "--- Building Fenrir (Server) & Tools ---"
 go build -ldflags="$LDFLAGS" -o bin/fenrir ./cmd/fenrir

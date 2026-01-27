@@ -10,7 +10,7 @@
 package web
 
 import (
-	 "github.com/SecareLupus/Fenrir/internal/db"
+	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/db"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 )

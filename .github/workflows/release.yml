@@ -42,7 +42,7 @@ jobs:
           # Strip 'v' prefix for deb version (e.g. v1.0.0 -> 1.0.0)
           VERSION_DEB=${VERSION_RAW#v}
           # Module path in ldflags
-          LDFLAGS="-X 'github.com/SecareLupus/Fenrir/internal/config.Version=${VERSION_RAW}' -s -w"
+          LDFLAGS="-X 'github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config.Version=${VERSION_RAW}' -s -w"
           
           # 1. Fenrir (Server)
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/fenrir-linux-amd64 ./cmd/fenrir
