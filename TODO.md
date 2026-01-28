@@ -22,13 +22,20 @@
 - [x] **Automated Release Pipeline**: GitHub Actions for multi-platform binaries and Docker.
 - [x] **Linux Distribution**: Automated `.deb` package creation.
 - [x] **Version Injection**: Compile-time versioning via `ldflags`.
-25: 
-26: ## Phase 10: Quality Assurance (Release v1.0.0 Ready)
-27: - [x] **E2E Integration Tests**: Automated tests using Docker.
-28: - [x] **Release Process Documentation**: Formalized steps for tagging and side-loading.
-29: - [x] **Security Review**: Deep audit of intermediate key handling.
-30: 
-31: ## 🚀 Future Roadmap (Post v1.0.0)
-32: - [ ] **Native Installers (Windows/Mac)**: Create `.msi` or `.pkg` installers for better desktop integration.
-33: - [ ] **Credential Auto-Renewal**: Background daemon for Tyr to automatically renew certs before expiry.
-34: - [ ] **Hardware CA Backend**: Direct PKCS#11 support for the Fenrir server to sign using HSMs.
+
+## Phase 10: Quality Assurance (Release v1.0.0 Ready)
+- [x] **E2E Integration Tests**: Automated tests using Docker.
+- [x] **Release Process Documentation**: Formalized steps for tagging and side-loading.
+- [x] **Security Review**: Deep audit of intermediate key handling.
+
+## Phase 11: Security & Reliability Hardening
+- [x] **Signed Sessions**: Replace plaintext `session_user` cookie with signed or server-stored sessions.
+- [x] **OIDC CSRF Protection**: Generate and validate per-login `state` (and nonce) for OIDC.
+- [x] **Concurrent-Safe Auth Maps**: Protect `webauthnSessions` and PoP `challenges` with locking or a concurrent store.
+- [x] **WebAuthn Nil Guard**: Disable WebAuthn routes or return a clear error when WebAuthn init fails.
+- [x] **CSRF Protection for Admin POSTs**: Add CSRF tokens on state-changing endpoints that rely on cookies.
+
+## 🚀 Future Roadmap (Post v1.0.0)
+- [ ] **Native Installers (Windows/Mac)**: Create `.msi` or `.pkg` installers for better desktop integration.
+- [ ] **Credential Auto-Renewal**: Background daemon for Tyr (CLI) to automatically renew certs before expiry. (GUI has a renewal loop already.)
+- [ ] **Hardware CA Backend**: Direct PKCS#11 support for the Fenrir server to sign using HSMs.

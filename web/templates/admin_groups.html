@@ -9,6 +9,7 @@
     <!-- Create Group -->
     <form action="/admin/groups/create" method="POST"
         style="margin-bottom: 2rem; padding-bottom: 2rem; border-bottom: 1px solid var(--border);">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 1rem; align-items: end;">
             <div>
                 <label>Group Name</label>
@@ -35,6 +36,7 @@
                     <!-- Group TTL Policy -->
                     <form action="/admin/groups/ttl" method="POST"
                         style="margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                         <input type="hidden" name="name" value="{{.Name}}">
                         <label style="margin: 0; white-space: nowrap;">Max TTL (sec):</label>
                         <input type="number" name="ttl" value="{{if .MaxTTL}}{{.MaxTTL}}{{end}}" placeholder="Default"
@@ -44,6 +46,7 @@
                     </form>
                 </div>
                 <form action="/admin/groups/delete" method="POST" onsubmit="return confirm('Delete this group?')">
+                    <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                     <input type="hidden" name="name" value="{{.Name}}">
                     <button type="submit" class="link-button" style="color: var(--error);">Delete</button>
                 </form>
@@ -59,6 +62,7 @@
                         style="background: rgba(59, 130, 246, 0.1); color: var(--primary); padding: 0.25rem 0.75rem; border-radius: 100px; font-size: 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
                         {{.}}
                         <form action="/admin/groups/members/toggle" method="POST" style="display: inline; margin: 0;">
+                            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                             <input type="hidden" name="group" value="{{$groupName}}">
                             <input type="hidden" name="username" value="{{.}}">
                             <input type="hidden" name="action" value="remove">
@@ -75,6 +79,7 @@
             <!-- Add Member -->
             <form action="/admin/groups/members/toggle" method="POST"
                 style="margin-top: 1.5rem; display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                 <input type="hidden" name="group" value="{{.Name}}">
                 <input type="hidden" name="action" value="add">
                 <select name="username" style="margin-bottom: 0; font-size: 0.85rem;">

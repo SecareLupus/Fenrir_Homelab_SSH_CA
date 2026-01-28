@@ -30,6 +30,7 @@ type Config struct {
 	AuditWebhookURL   string         `json:"audit_webhook_url"`
 	CAPassphrase      string         `json:"ca_passphrase"`
 	DBEncryptionKey   string         `json:"db_encryption_key"`
+	SessionSecret     string         `json:"session_secret"`
 }
 
 type OIDCConfig struct {
@@ -86,6 +87,7 @@ func Load() (*Config, error) {
 	caPassphrase := os.Getenv("CA_PASSPHRASE")
 	dbEncKey := os.Getenv("DB_ENCRYPTION_KEY")
 	webhookURL := os.Getenv("AUDIT_WEBHOOK_URL")
+	sessionSecret := os.Getenv("SESSION_SECRET")
 
 	rpName := os.Getenv("WEBAUTHN_RP_DISPLAY_NAME")
 	if rpName == "" {
@@ -121,5 +123,6 @@ func Load() (*Config, error) {
 		AuditWebhookURL: webhookURL,
 		CAPassphrase:    caPassphrase,
 		DBEncryptionKey: dbEncKey,
+		SessionSecret:   sessionSecret,
 	}, nil
 }

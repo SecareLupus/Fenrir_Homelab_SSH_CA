@@ -63,6 +63,7 @@
                         <form action="/admin/hosts/delete" method="POST"
                             onsubmit="return confirm('Delete host {{.Hostname}}? This will prevent automated renewals.')"
                             style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                             <input type="hidden" name="hostname" value="{{.Hostname}}">
                             <button type="submit" class="btn-action btn-disable"
                                 style="border: none; background: none; color: var(--error); cursor: pointer;">Delete</button>

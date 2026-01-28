@@ -18,6 +18,7 @@
     </div>
 
     <form action="/admin/hosts/sign" method="POST">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <label for="hostname">Host Principals (Comma-separated)</label>
         <input type="text" id="hostname" name="hostname"
             placeholder="e.g. server.local, server.homelab.local, 192.168.1.50" required>
@@ -73,6 +74,7 @@
                     </td>
                     <td style="padding: 1.25rem 1rem; text-align: right;">
                         <form action="/admin/hosts/apikey" method="POST" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                             <input type="hidden" name="hostname" value="{{.Hostname}}">
                             <button type="submit" class="btn-action">
                                 {{if .HasAPIKey}}Regenerate Key{{else}}Enable Auto-Renew{{end}}

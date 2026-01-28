@@ -59,6 +59,7 @@
                     <td style="padding: 1.25rem 1rem;">
                         <form action="/admin/users/ttl" method="POST"
                             style="display: flex; gap: 0.5rem; margin: 0; align-items: center;">
+                            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                             <input type="hidden" name="username" value="{{.Username}}">
                             <input type="number" name="ttl" value="{{if .MaxTTL}}{{.MaxTTL}}{{end}}"
                                 placeholder="Default"
@@ -70,6 +71,7 @@
                     <td style="padding: 1.25rem 1rem; text-align: right;">
                         {{if ne .Username "admin"}}
                         <form action="/admin/users/toggle" method="POST" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                             <input type="hidden" name="username" value="{{.Username}}">
                             {{if .Enabled}}
                             <input type="hidden" name="action" value="disable">

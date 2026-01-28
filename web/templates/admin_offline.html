@@ -19,6 +19,7 @@
     </div>
 
     <form action="/admin/offline/sign" method="POST">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <label for="type">Intermediate Type</label>
         <select id="type" name="type" style="margin-bottom: 1.5rem;">
             <option value="user">User CA Intermediate</option>
@@ -45,6 +46,7 @@
     <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Revoke a compromised online
         intermediate. This will update the Root KRL.</p>
     <form action="/admin/revoke" method="POST">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <label for="fingerprint">Intermediate Public Key (or Fingerprint)</label>
         <textarea id="fingerprint" name="fingerprint" rows="2" placeholder="ssh-ed25519 AAAAC3..."
             style="font-family: monospace; font-size: 0.85rem;"></textarea>

@@ -11,6 +11,7 @@ package web
 
 import (
 	"context"
+	"crypto/hmac"
 	"fmt"
 	"html/template"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +29,7 @@ import (
 	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/db"
 
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -39,6 +42,11 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const (
+	sessionCookieName   = "session_user"
+	oidcStateCookieName = "oidc_state"
+)
+
 type Server struct {
 	cfg  *config.Config
 	db   *db.DB
@@ -46,7 +54,8 @@ type Server struct {
 	mux  *http.ServeMux
 	tmpl *template.Template
 	// challenges stores active PoP challenges: fingerprint -> {challenge, expiry}
-	challenges map[string]challenge
+	challenges   map[string]challenge
+	challengesMu sync.Mutex
 
 	// Metrics
 	metricUserCertsSigned uint64
@@ -57,12 +66,27 @@ type Server struct {
 
 	webauthn *webauthn.WebAuthn
 	// webauthnSessions stores session data during registration/login: username -> sessionData
-	webauthnSessions map[string]*webauthn.SessionData
+	webauthnSessions   map[string]*webauthn.SessionData
+	webauthnSessionsMu sync.Mutex
+
+	sessionSecret []byte
 }
 
 type challenge struct {
 	val     string
 	expires time.Time
+}
+
+type sessionData struct {
+	Username string `json:"username"`
+	Expires  int64  `json:"expires"`
+	CSRF     string `json:"csrf"`
+}
+
+type oidcStateData struct {
+	State   string `json:"state"`
+	Nonce   string `json:"nonce"`
+	Expires int64  `json:"expires"`
 }
 
 func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
@@ -73,6 +97,20 @@ func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 		mux:              http.NewServeMux(),
 		challenges:       make(map[string]challenge),
 		webauthnSessions: make(map[string]*webauthn.SessionData),
+	}
+	if len(cfg.SessionSecret) > 0 {
+		s.sessionSecret = []byte(cfg.SessionSecret)
+	} else if len(cfg.DBEncryptionKey) > 0 {
+		s.sessionSecret = []byte(cfg.DBEncryptionKey)
+	} else {
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			log.Printf("failed to generate session secret: %v", err)
+			s.sessionSecret = []byte("insecure-session-secret")
+		} else {
+			s.sessionSecret = secret
+			log.Printf("SESSION_SECRET not set; using ephemeral in-memory secret")
+		}
 	}
 	if cfg.OIDC.Enabled {
 		provider, err := oidc.NewProvider(context.Background(), cfg.OIDC.IssuerURL)
@@ -239,25 +277,151 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Success - Set Session Cookie
-	s.setSession(w, r, username)
+	if err := s.setSession(w, r, username); err != nil {
+		http.Error(w, "Failed to create session", 500)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (s *Server) setSession(w http.ResponseWriter, r *http.Request, username string) {
+func randomToken(size int) (string, error) {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func (s *Server) signValue(payload []byte) string {
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
+	mac := hmac.New(sha256.New, s.sessionSecret)
+	mac.Write([]byte(payloadB64))
+	sig := mac.Sum(nil)
+	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
+	return payloadB64 + "." + sigB64
+}
+
+func (s *Server) verifyValue(value string) ([]byte, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 2 {
+		return nil, false
+	}
+	payloadB64 := parts[0]
+	sigB64 := parts[1]
+
+	payload, err := base64.RawURLEncoding.DecodeString(payloadB64)
+	if err != nil {
+		return nil, false
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(sigB64)
+	if err != nil {
+		return nil, false
+	}
+
+	mac := hmac.New(sha256.New, s.sessionSecret)
+	mac.Write([]byte(payloadB64))
+	expected := mac.Sum(nil)
+	if !hmac.Equal(sig, expected) {
+		return nil, false
+	}
+	return payload, true
+}
+
+func (s *Server) signJSON(value any) (string, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return s.signValue(payload), nil
+}
+
+func (s *Server) verifyJSON(value string, out any) bool {
+	payload, ok := s.verifyValue(value)
+	if !ok {
+		return false
+	}
+	if err := json.Unmarshal(payload, out); err != nil {
+		return false
+	}
+	return true
+}
+
+func (s *Server) setSession(w http.ResponseWriter, r *http.Request, username string) error {
+	csrfToken, err := randomToken(32)
+	if err != nil {
+		return err
+	}
+	session := sessionData{
+		Username: username,
+		Expires:  time.Now().Add(24 * time.Hour).Unix(),
+		CSRF:     csrfToken,
+	}
+	cookieValue, err := s.signJSON(session)
+	if err != nil {
+		return err
+	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     "session_user",
-		Value:    username,
+		Name:     sessionCookieName,
+		Value:    cookieValue,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   r.TLS != nil, // Set secure if HTTPS
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(24 * time.Hour),
 	})
+	return nil
+}
+
+func (s *Server) getSession(r *http.Request) (*sessionData, bool) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return nil, false
+	}
+	var session sessionData
+	if !s.verifyJSON(cookie.Value, &session) {
+		return nil, false
+	}
+	if session.Username == "" || session.Expires == 0 {
+		return nil, false
+	}
+	if time.Now().Unix() > session.Expires {
+		return nil, false
+	}
+	return &session, true
+}
+
+func (s *Server) csrfToken(r *http.Request) string {
+	session, ok := s.getSession(r)
+	if !ok {
+		return ""
+	}
+	return session.CSRF
+}
+
+func (s *Server) requireCSRF(w http.ResponseWriter, r *http.Request) bool {
+	token := r.Header.Get("X-CSRF-Token")
+	if token == "" {
+		token = r.FormValue("csrf_token")
+	}
+	if token == "" {
+		http.Error(w, "CSRF token required", 403)
+		return false
+	}
+	session, ok := s.getSession(r)
+	if !ok || session.CSRF == "" {
+		http.Error(w, "CSRF session invalid", 403)
+		return false
+	}
+	if !hmac.Equal([]byte(token), []byte(session.CSRF)) {
+		http.Error(w, "CSRF token invalid", 403)
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "session_user",
+		Name:     sessionCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -272,8 +436,37 @@ func (s *Server) handleLoginOIDC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	state := "randomstate" // Should be random and stored in session for CSRF
-	url := s.oidcConfig.AuthCodeURL(state)
+	state, err := randomToken(32)
+	if err != nil {
+		http.Error(w, "Failed to initialize OIDC state", 500)
+		return
+	}
+	nonce, err := randomToken(32)
+	if err != nil {
+		http.Error(w, "Failed to initialize OIDC nonce", 500)
+		return
+	}
+
+	stateCookie, err := s.signJSON(oidcStateData{
+		State:   state,
+		Nonce:   nonce,
+		Expires: time.Now().Add(10 * time.Minute).Unix(),
+	})
+	if err != nil {
+		http.Error(w, "Failed to initialize OIDC state", 500)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcStateCookieName,
+		Value:    stateCookie,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Now().Add(10 * time.Minute),
+	})
+
+	url := s.oidcConfig.AuthCodeURL(state, oauth2.SetAuthURLParam("nonce", nonce))
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
@@ -284,7 +477,21 @@ func (s *Server) handleLoginOIDCCallback(w http.ResponseWriter, r *http.Request)
 	}
 
 	state := r.URL.Query().Get("state")
-	if state != "randomstate" { // Should verify against session
+	stateCookie, err := r.Cookie(oidcStateCookieName)
+	if err != nil || stateCookie.Value == "" {
+		http.Error(w, "missing OIDC state", 400)
+		return
+	}
+	var storedState oidcStateData
+	if !s.verifyJSON(stateCookie.Value, &storedState) {
+		http.Error(w, "invalid OIDC state", 400)
+		return
+	}
+	if time.Now().Unix() > storedState.Expires {
+		http.Error(w, "OIDC state expired", 400)
+		return
+	}
+	if state == "" || state != storedState.State {
 		http.Error(w, "invalid state", 400)
 		return
 	}
@@ -308,6 +515,18 @@ func (s *Server) handleLoginOIDCCallback(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Failed to verify ID Token: "+err.Error(), 500)
 		return
 	}
+	if storedState.Nonce == "" || idToken.Nonce != storedState.Nonce {
+		http.Error(w, "invalid nonce", 400)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcStateCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
 
 	var claims struct {
 		Email string `json:"email"`
@@ -339,7 +558,10 @@ func (s *Server) handleLoginOIDCCallback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.setSession(w, r, username)
+	if err := s.setSession(w, r, username); err != nil {
+		http.Error(w, "Failed to create session", 500)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -355,9 +577,9 @@ func (s *Server) authenticate(r *http.Request) string {
 	}
 
 	// 2. Check for Session Cookie
-	cookie, err := r.Cookie("session_user")
-	if err == nil && cookie.Value != "" {
-		return cookie.Value
+	session, ok := s.getSession(r)
+	if ok {
+		return session.Username
 	}
 
 	return ""
@@ -415,6 +637,7 @@ func (s *Server) handleAdminOffline(w http.ResponseWriter, r *http.Request) {
 		"UserCAKey": string(userCA),
 		"HostCAKey": string(hostCA),
 	}
+	s.attachCSRFToken(r, data)
 	s.renderPage(w, "admin_offline.html", data)
 }
 
@@ -427,6 +650,9 @@ func (s *Server) handleAdminOfflineSign(w http.ResponseWriter, r *http.Request) 
 	username := s.authenticate(r)
 	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 
@@ -737,6 +963,15 @@ func (s *Server) renderPage(w http.ResponseWriter, page string, data any) {
 	tmpl.Execute(w, data)
 }
 
+func (s *Server) attachCSRFToken(r *http.Request, data map[string]any) {
+	if data == nil {
+		return
+	}
+	if token := s.csrfToken(r); token != "" {
+		data["CSRFToken"] = token
+	}
+}
+
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	username := s.authenticate(r)
 	if !s.isAdmin(username) {
@@ -750,10 +985,12 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.renderPage(w, "admin_users.html", map[string]any{
+	data := map[string]any{
 		"User":  username,
 		"Users": users,
-	})
+	}
+	s.attachCSRFToken(r, data)
+	s.renderPage(w, "admin_users.html", data)
 }
 
 func (s *Server) handleAdminUserToggle(w http.ResponseWriter, r *http.Request) {
@@ -765,6 +1002,9 @@ func (s *Server) handleAdminUserToggle(w http.ResponseWriter, r *http.Request) {
 	admin := s.authenticate(r)
 	if !s.isAdmin(admin) {
 		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 
@@ -838,14 +1078,19 @@ func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "GET" {
 		hosts, _ := s.db.ListHosts()
-		s.renderPage(w, "admin_host_sign.html", map[string]any{
+		data := map[string]any{
 			"User":  username,
 			"Hosts": hosts,
-		})
+		}
+		s.attachCSRFToken(r, data)
+		s.renderPage(w, "admin_host_sign.html", data)
 		return
 	}
 
 	// POST: Sign Host Key
+	if !s.requireCSRF(w, r) {
+		return
+	}
 	pubKeyStr := r.FormValue("pubkey")
 	hostname := r.FormValue("hostname")
 	ttlStr := r.FormValue("ttl")
@@ -894,14 +1139,17 @@ func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminHostAPIKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
 	username := s.authenticate(r)
 	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
-
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", 405)
+	if !s.requireCSRF(w, r) {
 		return
 	}
 
@@ -941,6 +1189,9 @@ func (s *Server) handleAdminRevoke(w http.ResponseWriter, r *http.Request) {
 	username := s.authenticate(r)
 	if !s.isAdmin(username) {
 		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 
@@ -984,12 +1235,14 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 		groupMembers[g.Name] = members
 	}
 
-	s.renderPage(w, "admin_groups.html", map[string]any{
+	data := map[string]any{
 		"User":         username,
 		"Groups":       groups,
 		"Users":        users,
 		"GroupMembers": groupMembers,
-	})
+	}
+	s.attachCSRFToken(r, data)
+	s.renderPage(w, "admin_groups.html", data)
 }
 
 func (s *Server) handleAdminGroupsCreate(w http.ResponseWriter, r *http.Request) {
@@ -1001,6 +1254,9 @@ func (s *Server) handleAdminGroupsCreate(w http.ResponseWriter, r *http.Request)
 	admin := s.authenticate(r)
 	if !s.isAdmin(admin) {
 		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 
@@ -1029,6 +1285,9 @@ func (s *Server) handleAdminGroupsDelete(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Forbidden", 403)
 		return
 	}
+	if !s.requireCSRF(w, r) {
+		return
+	}
 
 	name := r.FormValue("name")
 
@@ -1052,6 +1311,9 @@ func (s *Server) handleAdminGroupsMemberToggle(w http.ResponseWriter, r *http.Re
 	admin := s.authenticate(r)
 	if !s.isAdmin(admin) {
 		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 
@@ -1088,6 +1350,9 @@ func (s *Server) handleAdminGroupsTTL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
+	if !s.requireCSRF(w, r) {
+		return
+	}
 
 	name := r.FormValue("name")
 	ttlStr := r.FormValue("ttl")
@@ -1113,6 +1378,9 @@ func (s *Server) handleAdminUsersTTL(w http.ResponseWriter, r *http.Request) {
 	admin := s.authenticate(r)
 	if !s.isAdmin(admin) {
 		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 
@@ -1176,7 +1444,10 @@ func (s *Server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 	if valid {
 		// Clear pending cookie
 		http.SetCookie(w, &http.Cookie{Name: "mfa_pending_user", MaxAge: -1, Path: "/"})
-		s.setSession(w, r, username)
+		if err := s.setSession(w, r, username); err != nil {
+			http.Error(w, "Failed to create session", 500)
+			return
+		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	} else {
 		s.renderPage(w, "login_mfa.html", map[string]any{"User": username, "Error": "Invalid MFA code or backup code"})
@@ -1391,7 +1662,9 @@ func (s *Server) verifyPoP(w http.ResponseWriter, r *http.Request, pubKey ssh.Pu
 		cBytes := make([]byte, 32)
 		rand.Read(cBytes)
 		cStr := base64.StdEncoding.EncodeToString(cBytes)
+		s.challengesMu.Lock()
 		s.challenges[fingerprint] = challenge{val: cStr, expires: time.Now().Add(5 * time.Minute)}
+		s.challengesMu.Unlock()
 
 		w.Header().Set("X-SSH-Challenge", cStr)
 		http.Error(w, "Proof of Possession required", 401)
@@ -1399,12 +1672,15 @@ func (s *Server) verifyPoP(w http.ResponseWriter, r *http.Request, pubKey ssh.Pu
 	}
 
 	// Verify Challenge
+	s.challengesMu.Lock()
 	stored, ok := s.challenges[fingerprint]
 	if !ok || stored.val != challengeVal || time.Now().After(stored.expires) {
+		s.challengesMu.Unlock()
 		http.Error(w, "Invalid or expired challenge", 401)
 		return false, "Invalid challenge"
 	}
 	delete(s.challenges, fingerprint)
+	s.challengesMu.Unlock()
 
 	sigBytes, err := base64.StdEncoding.DecodeString(sigBase64)
 	if err != nil {
@@ -1469,11 +1745,13 @@ func (s *Server) handleAdminHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.renderPage(w, "admin_hosts.html", map[string]any{
+	data := map[string]any{
 		"User":    username,
 		"IsAdmin": true,
 		"Hosts":   hosts,
-	})
+	}
+	s.attachCSRFToken(r, data)
+	s.renderPage(w, "admin_hosts.html", data)
 }
 
 func (s *Server) handleAdminHostsDelete(w http.ResponseWriter, r *http.Request) {
@@ -1485,6 +1763,9 @@ func (s *Server) handleAdminHostsDelete(w http.ResponseWriter, r *http.Request) 
 	admin := s.authenticate(r)
 	if !s.isAdmin(admin) {
 		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 
@@ -1501,6 +1782,10 @@ func (s *Server) handleAdminHostsDelete(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleWebAuthnRegisterBegin(w http.ResponseWriter, r *http.Request) {
+	if s.webauthn == nil {
+		http.Error(w, "WebAuthn is not configured", 503)
+		return
+	}
 	username := s.authenticate(r)
 	if username == "" {
 		http.Error(w, "Unauthorized", 401)
@@ -1522,23 +1807,33 @@ func (s *Server) handleWebAuthnRegisterBegin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	s.webauthnSessionsMu.Lock()
 	s.webauthnSessions[username] = sessionData
+	s.webauthnSessionsMu.Unlock()
 	json.NewEncoder(w).Encode(options)
 }
 
 func (s *Server) handleWebAuthnRegisterFinish(w http.ResponseWriter, r *http.Request) {
+	if s.webauthn == nil {
+		http.Error(w, "WebAuthn is not configured", 503)
+		return
+	}
 	username := s.authenticate(r)
 	if username == "" {
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
 
+	s.webauthnSessionsMu.Lock()
 	sessionData, ok := s.webauthnSessions[username]
+	if ok {
+		delete(s.webauthnSessions, username)
+	}
+	s.webauthnSessionsMu.Unlock()
 	if !ok {
 		http.Error(w, "Session not found", 400)
 		return
 	}
-	delete(s.webauthnSessions, username)
 
 	user, _ := s.db.GetUser(username)
 	creds, _ := s.db.GetWebAuthnCredentials(username)
@@ -1560,6 +1855,10 @@ func (s *Server) handleWebAuthnRegisterFinish(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleWebAuthnLoginBegin(w http.ResponseWriter, r *http.Request) {
+	if s.webauthn == nil {
+		http.Error(w, "WebAuthn is not configured", 503)
+		return
+	}
 	username := r.URL.Query().Get("username")
 	if username == "" {
 		http.Error(w, "Missing username", 400)
@@ -1581,23 +1880,33 @@ func (s *Server) handleWebAuthnLoginBegin(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	s.webauthnSessionsMu.Lock()
 	s.webauthnSessions[username] = sessionData
+	s.webauthnSessionsMu.Unlock()
 	json.NewEncoder(w).Encode(options)
 }
 
 func (s *Server) handleWebAuthnLoginFinish(w http.ResponseWriter, r *http.Request) {
+	if s.webauthn == nil {
+		http.Error(w, "WebAuthn is not configured", 503)
+		return
+	}
 	username := r.URL.Query().Get("username")
 	if username == "" {
 		http.Error(w, "Missing username", 400)
 		return
 	}
 
+	s.webauthnSessionsMu.Lock()
 	sessionData, ok := s.webauthnSessions[username]
+	if ok {
+		delete(s.webauthnSessions, username)
+	}
+	s.webauthnSessionsMu.Unlock()
 	if !ok {
 		http.Error(w, "Session not found", 400)
 		return
 	}
-	delete(s.webauthnSessions, username)
 
 	user, _ := s.db.GetUser(username)
 	creds, _ := s.db.GetWebAuthnCredentials(username)
@@ -1612,6 +1921,9 @@ func (s *Server) handleWebAuthnLoginFinish(w http.ResponseWriter, r *http.Reques
 	// Update sign count
 	s.db.UpdateWebAuthnCredential(credential.ID, int32(credential.Authenticator.SignCount))
 
-	s.setSession(w, r, username)
+	if err := s.setSession(w, r, username); err != nil {
+		http.Error(w, "Failed to create session", 500)
+		return
+	}
 	w.Write([]byte("Login successful"))
 }
