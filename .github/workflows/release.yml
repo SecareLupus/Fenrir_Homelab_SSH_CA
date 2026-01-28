@@ -27,6 +27,15 @@ jobs:
       - name: Install dependencies (Linux GUI & PAM)
         run: |
           sudo dpkg --add-architecture arm64
+          # Limit default sources to amd64; arm64 comes from ports.ubuntu.com.
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i 's/^URIs: http:\/\/azure.archive.ubuntu.com\/ubuntu/URIs: http:\/\/azure.archive.ubuntu.com\/ubuntu\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+            sudo sed -i 's/^URIs: http:\/\/security.ubuntu.com\/ubuntu/URIs: http:\/\/security.ubuntu.com\/ubuntu\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          if [ -f /etc/apt/sources.list ]; then
+            sudo sed -i 's|^deb http://security.ubuntu.com/ubuntu|deb [arch=amd64] http://security.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+            sudo sed -i 's|^deb http://azure.archive.ubuntu.com/ubuntu|deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+          fi
           # Add arm64 ports sources; security.ubuntu.com does not host arm64.
           sudo tee /etc/apt/sources.list.d/ubuntu-ports.list >/dev/null <<'EOF'
           deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
