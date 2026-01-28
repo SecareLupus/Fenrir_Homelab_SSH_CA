@@ -26,39 +26,87 @@ jobs:
 
       - name: Install dependencies (Linux GUI & PAM)
         run: |
-          sudo dpkg --add-architecture arm64
-          # Limit default sources to amd64; arm64 comes from ports.ubuntu.com.
-          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
-            sudo python3 - <<'PY'
-from pathlib import Path
-path = Path("/etc/apt/sources.list.d/ubuntu.sources")
-lines = path.read_text().splitlines()
-out = []
-in_stanza = False
-has_arch = False
-for line in lines:
-    if line.strip() == "":
-        if in_stanza and not has_arch:
-            out.append("Architectures: amd64")
+          # Robustly restrict all existing repositories to amd64
+          # (e.g. Azure mirrors, GitHub tools) to prevent 404s when arm64 is enabled.
+          sudo python3 - <<'PY'
+import os
+import re
+
+def patch_list_file(filepath):
+    if not os.path.exists(filepath): return
+    print(f"Patching {filepath}")
+    with open(filepath, 'r') as f: lines = f.readlines()
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('deb') and not stripped.startswith('deb-src'):
+            if 'arch=' in line: # Already has arch
+                new_lines.append(line)
+                continue
+            
+            # deb [options] url ...
+            match = re.match(r'^(deb\s+)\[(.*?)\](\s+.*)$', line)
+            if match:
+                prefix, opts, suffix = match.groups()
+                new_lines.append(f'{prefix}[{opts} arch=amd64]{suffix}\n')
+            else:
+                # deb url ...
+                parts = line.split(maxsplit=2)
+                if len(parts) >= 2:
+                    # parts: [deb, url, dist...]
+                    # Reconstruct line carefully to preserve spacing? 
+                    # Actually standard format is "deb url dist comp1 comp2..."
+                    # Just inserting [arch=amd64] after deb is safe.
+                    # line starts with "deb " (checked above)
+                    # We can just replace "deb " with "deb [arch=amd64] "
+                    new_lines.append(line.replace('deb ', 'deb [arch=amd64] ', 1))
+                else:
+                    new_lines.append(line)
+        else:
+            new_lines.append(line)
+    with open(filepath, 'w') as f: f.writelines(new_lines)
+
+def patch_sources_file(filepath):
+    if not os.path.exists(filepath): return
+    print(f"Patching {filepath}")
+    with open(filepath, 'r') as f: lines = f.read().splitlines()
+    out = []
+    in_stanza = False
+    has_arch = False
+    for line in lines:
+        if line.strip() == "":
+            if in_stanza and not has_arch:
+                out.append("Architectures: amd64")
+            out.append(line)
+            in_stanza = False
+            has_arch = False
+            continue
+        if line.strip().startswith("Types:"):
+            # Only patch "deb", not "deb-src" if needed? 
+            # Usually Types: deb is standard.
+            in_stanza = True
+            has_arch = False
+        if line.strip().startswith("Architectures:"):
+            has_arch = True
         out.append(line)
-        in_stanza = False
-        has_arch = False
-        continue
-    if line.startswith("Types:"):
-        in_stanza = True
-        has_arch = False
-    if line.startswith("Architectures:"):
-        has_arch = True
-    out.append(line)
-if in_stanza and not has_arch:
-    out.append("Architectures: amd64")
-path.write_text("\n".join(out) + "\n")
+    if in_stanza and not has_arch:
+        out.append("Architectures: amd64")
+    with open(filepath, 'w') as f: f.write("\n".join(out) + "\n")
+
+# Patch .list files
+files = ['/etc/apt/sources.list']
+if os.path.exists('/etc/apt/sources.list.d'):
+    files.extend([os.path.join('/etc/apt/sources.list.d', f) for f in os.listdir('/etc/apt/sources.list.d') if f.endswith('.list')])
+
+for f in files: patch_list_file(f)
+
+# Patch .sources files
+if os.path.exists('/etc/apt/sources.list.d'):
+    for f in os.listdir('/etc/apt/sources.list.d'):
+        if f.endswith('.sources'):
+            patch_sources_file(os.path.join('/etc/apt/sources.list.d', f))
 PY
-          fi
-          if [ -f /etc/apt/sources.list ]; then
-            sudo sed -i 's|^deb http://security.ubuntu.com/ubuntu|deb [arch=amd64] http://security.ubuntu.com/ubuntu|g' /etc/apt/sources.list
-            sudo sed -i 's|^deb http://azure.archive.ubuntu.com/ubuntu|deb [arch=amd64] http://azure.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
-          fi
+          sudo dpkg --add-architecture arm64
           # Add arm64 ports sources; security.ubuntu.com does not host arm64.
           sudo tee /etc/apt/sources.list.d/ubuntu-ports.list >/dev/null <<'EOF'
           deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse
