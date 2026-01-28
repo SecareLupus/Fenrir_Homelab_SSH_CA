@@ -29,8 +29,31 @@ jobs:
           sudo dpkg --add-architecture arm64
           # Limit default sources to amd64; arm64 comes from ports.ubuntu.com.
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
-            sudo sed -i 's/^URIs: http:\/\/azure.archive.ubuntu.com\/ubuntu/URIs: http:\/\/azure.archive.ubuntu.com\/ubuntu\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
-            sudo sed -i 's/^URIs: http:\/\/security.ubuntu.com\/ubuntu/URIs: http:\/\/security.ubuntu.com\/ubuntu\nArchitectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+            sudo python3 - <<'PY'
+from pathlib import Path
+path = Path("/etc/apt/sources.list.d/ubuntu.sources")
+lines = path.read_text().splitlines()
+out = []
+in_stanza = False
+has_arch = False
+for line in lines:
+    if line.strip() == "":
+        if in_stanza and not has_arch:
+            out.append("Architectures: amd64")
+        out.append(line)
+        in_stanza = False
+        has_arch = False
+        continue
+    if line.startswith("Types:"):
+        in_stanza = True
+        has_arch = False
+    if line.startswith("Architectures:"):
+        has_arch = True
+    out.append(line)
+if in_stanza and not has_arch:
+    out.append("Architectures: amd64")
+path.write_text("\n".join(out) + "\n")
+PY
           fi
           if [ -f /etc/apt/sources.list ]; then
             sudo sed -i 's|^deb http://security.ubuntu.com/ubuntu|deb [arch=amd64] http://security.ubuntu.com/ubuntu|g' /etc/apt/sources.list
