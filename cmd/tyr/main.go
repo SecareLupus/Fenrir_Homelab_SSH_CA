@@ -18,8 +18,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/client"
 	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
@@ -34,6 +37,9 @@ func main() {
 	password := flag.String("password", "", "Password for Fenrir login (will prompt if not provided)")
 	keyPath := flag.String("identity", "", "Path to SSH private key")
 	keyType := flag.String("type", "ed25519", "Key type to generate (ed25519, ed25519-sk)")
+	autoRenew := flag.Bool("auto-renew", false, "Run in auto-renew daemon mode")
+	checkInterval := flag.String("check-interval", "15m", "Auto-renew check interval (e.g. 15m)")
+	renewBefore := flag.String("renew-before", "1h", "Renew certificate if expiring within this duration (e.g. 1h)")
 	flag.Parse()
 
 	if *showVersion {
@@ -68,7 +74,7 @@ func main() {
 	} else if *apiKeyFile != "" {
 		// Otherwise, use API key file if provided
 		keyBytes, _ := os.ReadFile(*apiKeyFile)
-		apiKey = string(keyBytes)
+		apiKey = strings.TrimSpace(string(keyBytes))
 	}
 
 	if *keyPath == "" {
@@ -88,9 +94,25 @@ func main() {
 		AutoEnroll: true,
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if *autoRenew {
+		interval, err := time.ParseDuration(*checkInterval)
+		if err != nil {
+			log.Fatalf("Invalid check interval: %v", err)
+		}
+		renewBeforeDur, err := time.ParseDuration(*renewBefore)
+		if err != nil {
+			log.Fatalf("Invalid renew-before duration: %v", err)
+		}
+		runAutoRenewLoop(ctx, cfg, interval, renewBeforeDur)
+		return
+	}
+
 	fmt.Printf("Requesting certificate for %s...\n", *keyPath)
 
-	err := cfg.Sign(context.Background(), func(challenge string) {
+	err := cfg.Sign(ctx, func(challenge string) {
 		fmt.Println("PoP Challenge received. Touch your security key if prompted...")
 	})
 
@@ -162,4 +184,48 @@ func loginAndGetAPIKey(caURL, username, password string) (string, error) {
 // readPassword reads a password from stdin without echoing
 func readPassword() ([]byte, error) {
 	return term.ReadPassword(int(syscall.Stdin))
+}
+
+func runAutoRenewLoop(ctx context.Context, cfg *client.Config, interval, renewBefore time.Duration) {
+	if interval <= 0 {
+		interval = 15 * time.Minute
+	}
+	if renewBefore <= 0 {
+		renewBefore = 1 * time.Hour
+	}
+
+	log.Printf("Auto-renew enabled. Interval=%s RenewBefore=%s", interval, renewBefore)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		if shouldRenew(cfg, renewBefore) {
+			log.Println("Auto-renew triggered...")
+			if err := cfg.Sign(ctx, nil); err != nil {
+				log.Printf("Auto-renew failed: %v", err)
+			} else {
+				log.Println("Auto-renew success.")
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			log.Println("Auto-renew stopped.")
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func shouldRenew(cfg *client.Config, renewBefore time.Duration) bool {
+	id, err := cfg.GetIdentity()
+	if err != nil {
+		log.Printf("Identity check failed: %v", err)
+		return false
+	}
+	if !id.HasCert || id.CertExpiry.IsZero() {
+		return true
+	}
+	return time.Until(id.CertExpiry) <= renewBefore
 }

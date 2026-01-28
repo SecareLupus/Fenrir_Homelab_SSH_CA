@@ -8,17 +8,17 @@ VERSION=${1:-"local-dev"}
 LDFLAGS="-X 'github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config.Version=$VERSION' -s -w"
 
 echo "--- Building Fenrir (Server) & Tools ---"
-go build -ldflags="$LDFLAGS" -o bin/fenrir ./cmd/fenrir
-go build -ldflags="$LDFLAGS" -o bin/tyr ./cmd/tyr
-go build -ldflags="$LDFLAGS" -o bin/gleipnir ./cmd/gleipnir
+CGO_ENABLED=1 go build -ldflags="$LDFLAGS" -o bin/fenrir ./cmd/fenrir
+CGO_ENABLED=1 go build -ldflags="$LDFLAGS" -o bin/tyr ./cmd/tyr
+CGO_ENABLED=1 go build -ldflags="$LDFLAGS" -o bin/gleipnir ./cmd/gleipnir
 
 # Build the GUI Client
 echo "--- Building Tyr Desktop (GUI) ---"
-go build -ldflags="$LDFLAGS" -o bin/tyr-gui ./cmd/tyr-gui
+CGO_ENABLED=1 go build -ldflags="$LDFLAGS" -o bin/tyr-gui ./cmd/tyr-gui
 
 echo "--- Building PAM Module ---"
 # Requires libpam0g-dev on the system
-go build -ldflags="$LDFLAGS" -buildmode=c-shared -o bin/pam_fenrir.so ./cmd/pam-fenrir
+CGO_ENABLED=1 go build -ldflags="$LDFLAGS" -buildmode=c-shared -o bin/pam_fenrir.so ./cmd/pam-fenrir
 
 echo ""
 echo "--- Cross-Compiling Gleipnir for Fleet (arm64) ---"

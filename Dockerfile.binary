@@ -8,7 +8,8 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
 # The binary should be built for linux/amd64 (or arm64) using:
-# CGO_ENABLED=0 go build -o ssh-ca ./cmd/server
+# CGO_ENABLED=1 go build -o ssh-ca ./cmd/server
+# (Set CGO_ENABLED=0 only if you explicitly want to omit PKCS#11 support.)
 COPY ssh-ca .
 COPY web/static ./web/static
 COPY web/templates ./web/templates

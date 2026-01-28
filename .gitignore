@@ -5,6 +5,7 @@ gleipnir
 /tyr-gui
 bin/
 build/
+.codex_scratch/
 *.so
 *.o
 *.a

@@ -1,6 +1,6 @@
 # To be run on an ISOLATED/OFFLINE host.
 # Build the binary first on an online machine:
-# CGO_ENABLED=0 go build -o fenrir ./cmd/server
+# CGO_ENABLED=1 go build -o fenrir ./cmd/server
 # Then move the binary and Dockerfile.binary to the offline host.
 
 services:

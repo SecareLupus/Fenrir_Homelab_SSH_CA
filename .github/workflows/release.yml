@@ -26,6 +26,7 @@ jobs:
 
       - name: Install dependencies (Linux GUI & PAM)
         run: |
+          sudo dpkg --add-architecture arm64
           sudo apt-get update
           sudo apt-get install -y \
             libayatana-appindicator3-dev \
@@ -33,7 +34,10 @@ jobs:
             libgtk-3-dev \
             libpam0g-dev \
             gcc-aarch64-linux-gnu \
-            gcc-mingw-w64
+            gcc-mingw-w64 \
+            pkg-config \
+            libp11-kit-dev \
+            libp11-kit-dev:arm64
 
       - name: Build Binaries
         run: |
@@ -45,8 +49,10 @@ jobs:
           LDFLAGS="-X 'github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config.Version=${VERSION_RAW}' -s -w"
           
           # 1. Fenrir (Server)
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/fenrir-linux-amd64 ./cmd/fenrir
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="$LDFLAGS" -o dist/fenrir-linux-arm64 ./cmd/fenrir
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/fenrir-linux-amd64 ./cmd/fenrir
+          PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
+            CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
+            go build -ldflags="$LDFLAGS" -o dist/fenrir-linux-arm64 ./cmd/fenrir
           
           # 2. Tyr (Client CLI)
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="$LDFLAGS" -o dist/tyr-linux-amd64 ./cmd/tyr

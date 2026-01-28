@@ -27,6 +27,7 @@ The GitHub Action (`release.yml`) will automatically trigger when a tag matching
 - Compile the PAM shared library (`.so`).
 - Build and push multi-arch Docker images to `ghcr.io/secarelupus/fenrir`.
 - Create a **Draft Release** on GitHub.
+Note: Fenrir Linux binaries are built with CGO enabled in CI to include PKCS#11 support.
 
 ### Step 4: Verification
 1.  Download the binaries from the Draft Release.

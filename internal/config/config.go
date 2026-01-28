@@ -48,11 +48,13 @@ type WebAuthnConfig struct {
 }
 
 type PKCS11Config struct {
-	Enabled    bool   `json:"enabled"`
-	Module     string `json:"module"`
-	TokenLabel string `json:"token_label"`
-	PIN        string `json:"pin"`
-	KeyLabel   string `json:"key_label"`
+	Enabled       bool   `json:"enabled"`
+	Module        string `json:"module"`
+	TokenLabel    string `json:"token_label"`
+	PIN           string `json:"pin"`
+	KeyLabel      string `json:"key_label"`
+	UserKeyLabel  string `json:"user_key_label"`
+	HostKeyLabel  string `json:"host_key_label"`
 }
 
 // Load reads configuration from environment variables or defaults
@@ -102,12 +104,29 @@ func Load() (*Config, error) {
 		rpOrigin = "http://localhost:8080"
 	}
 
+	pkcs11Enabled := os.Getenv("PKCS11_ENABLED") == "true"
+	pkcs11Module := os.Getenv("PKCS11_MODULE")
+	pkcs11TokenLabel := os.Getenv("PKCS11_TOKEN_LABEL")
+	pkcs11PIN := os.Getenv("PKCS11_PIN")
+	pkcs11KeyLabel := os.Getenv("PKCS11_KEY_LABEL")
+	pkcs11UserKeyLabel := os.Getenv("PKCS11_USER_KEY_LABEL")
+	pkcs11HostKeyLabel := os.Getenv("PKCS11_HOST_KEY_LABEL")
+
 	return &Config{
 		BindAddr:          bindAddr,
 		DBPath:            dbPath,
 		KeyPath:           keyPath,
 		Mode:              mode,
 		HardenedTrustSync: hardened,
+		PKCS11: PKCS11Config{
+			Enabled:      pkcs11Enabled,
+			Module:       pkcs11Module,
+			TokenLabel:   pkcs11TokenLabel,
+			PIN:          pkcs11PIN,
+			KeyLabel:     pkcs11KeyLabel,
+			UserKeyLabel: pkcs11UserKeyLabel,
+			HostKeyLabel: pkcs11HostKeyLabel,
+		},
 		OIDC: OIDCConfig{
 			Enabled:      oidcEnabled,
 			IssuerURL:    oidcIssuer,

@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -150,7 +151,7 @@ func (c *Config) Sign(ctx context.Context, onChallenge func(string)) error {
 	}
 
 	certBytes, _ := io.ReadAll(resp.Body)
-	return os.WriteFile(c.KeyPath+"-cert.pub", certBytes, 0644)
+	return writeFileAtomic(c.KeyPath+"-cert.pub", certBytes, 0644)
 }
 
 func getSigner(path string, pubKeyBytes []byte) (ssh.Signer, error) {
@@ -185,4 +186,45 @@ func getSigner(path string, pubKeyBytes []byte) (ssh.Signer, error) {
 	}
 
 	return nil, fmt.Errorf("no usable signer found")
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	tmp, err := os.CreateTemp(dir, base+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() {
+		_ = os.Remove(tmpName)
+	}
+
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(path)
+		if err := os.Rename(tmpName, path); err != nil {
+			cleanup()
+			return err
+		}
+	}
+	return nil
 }

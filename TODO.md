@@ -37,5 +37,5 @@
 
 ## 🚀 Future Roadmap (Post v1.0.0)
 - [ ] **Native Installers (Windows/Mac)**: Create `.msi` or `.pkg` installers for better desktop integration.
-- [ ] **Credential Auto-Renewal**: Background daemon for Tyr (CLI) to automatically renew certs before expiry. (GUI has a renewal loop already.)
-- [ ] **Hardware CA Backend**: Direct PKCS#11 support for the Fenrir server to sign using HSMs.
+- [x] **Credential Auto-Renewal**: Background daemon for Tyr (CLI) to automatically renew certs before expiry. (GUI has a renewal loop already.)
+- [x] **Hardware CA Backend**: Direct PKCS#11 support for the Fenrir server to sign using HSMs.
