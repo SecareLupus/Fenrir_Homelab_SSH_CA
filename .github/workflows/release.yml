@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build and Release
+    name: Build Linux
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -189,6 +189,64 @@ jobs:
             dist/*
           draft: true
           generate_release_notes: true
+
+  release-windows:
+    name: Release Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build Tyr for Windows
+        run: |
+          mkdir dist
+          go build -ldflags="-s -w" -o dist/tyr-windows-amd64.exe ./cmd/tyr
+
+      - name: Build MSI Installer
+        run: |
+          # WiX is pre-installed on windows-latest
+          "%wix%bin\candle.exe" build/windows/installer.wxs -out dist/installer.wixobj
+          "%wix%bin\light.exe" dist/installer.wixobj -out dist/tyr-setup.msi -ext WixUIExtension
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            dist/*.exe
+            dist/*.msi
+
+  release-macos:
+    name: Release MacOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build Tyr for MacOS
+        run: |
+          mkdir dist
+          # Universal binary or separate? Start with arm64 (Apple Silicon)
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/tyr-macos-arm64 ./cmd/tyr
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/tyr-macos-amd64 ./cmd/tyr
+
+      - name: Build PKG Installer
+        run: |
+          mkdir -p build/pkg/root/usr/local/bin
+          cp dist/tyr-macos-arm64 build/pkg/root/usr/local/bin/tyr
+          pkgbuild --root build/pkg/root --identifier com.secarelupus.tyr --version 1.0.0 --install-location / dist/tyr-installer.pkg
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            dist/tyr-macos-*
+            dist/*.pkg
 
   docker:
     name: Build Docker Images

@@ -28,7 +28,7 @@ import (
 
 func main() {
 	caURL := flag.String("url", "http://ssh-ca.local:8080", "SSH CA Server URL")
-	interval := flag.Duration("interval", 5*time.Minute, "Sync interval")
+	interval := flag.Duration("interval", 1*time.Minute, "Sync interval")
 	userCAPath := flag.String("user-ca-path", "/etc/ssh/user_ca.pub", "Path to save User CA public key")
 	krlPath := flag.String("krl-path", "/etc/ssh/revoked.krl", "Path to save KRL")
 	hostKeyPath := flag.String("host-key-path", "", "Path to host private key (for renewal)")

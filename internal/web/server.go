@@ -353,6 +353,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+// Start begins listening for HTTP requests on the configured bind address.
 func (s *Server) Start() error {
 	handler := s.securityHeaders(s.mux)
 	return http.ListenAndServe(s.cfg.BindAddr, handler)
@@ -1694,6 +1695,8 @@ func (s *Server) handleKRL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
 	w.Header().Set("Content-Type", "text/plain")
 	for _, k := range keys {
 		w.Write([]byte(k + "\n"))

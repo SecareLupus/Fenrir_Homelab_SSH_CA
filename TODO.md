@@ -84,12 +84,18 @@
 ## Phase 16: Advanced Security & Compliance
 
 - [x] **MFA Rate Limiting**: Limit brute-force attempts on TOTP and backup codes.
-- [ ] **KRL Sync Optimization**: Implement faster revocation propagation to reduce the 5-minute sync window.
-- [ ] **PoP & Auth Integration Tests**: Specific integration tests for Proof-of-Possession and renewal flows.
-- [ ] **Professional Audit Readiness**: Final sweep of the security model and documentation for external review.
+- [x] **KRL Sync Optimization**: Implement faster revocation propagation to reduce the 5-minute sync window.
+- [x] **PoP & Auth Integration Tests**: Specific integration tests for Proof-of-Possession and renewal flows.
+- [x] **Professional Audit Readiness**: Final sweep of the security model and documentation for external review.
+
+## Phase 17: Release Polish & Installers
+
+- [x] **Administrator Guide**: Comprehensive setup and maintenance guide.
+- [x] **User Guide**: Client usage documentation.
+- [x] **Native Installers (Windows/Mac)**: Create `.msi` and `.pkg` installers via GitHub Actions.
 
 ## 🚀 Future Roadmap (Post v1.0.0)
 
-- [ ] **Native Installers (Windows/Mac)**: Create `.msi` or `.pkg` installers for better desktop integration.
+- [x] **Native Installers (Windows/Mac)**: Create `.msi` or `.pkg` installers for better desktop integration.
 - [x] **Credential Auto-Renewal**: Background daemon for Tyr (CLI) to automatically renew certs before expiry.
 - [x] **Hardware CA Backend**: Direct PKCS#11 support for the Fenrir server to sign using HSMs.
