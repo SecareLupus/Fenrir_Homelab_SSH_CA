@@ -7,8 +7,11 @@ build:
 test:
 	go test -v ./internal/...
 
-test-e2e:
+test-e2e: clean-test
 	docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test-runner
+
+clean-test:
+	docker-compose -f docker-compose.test.yml down -v --remove-orphans
 
 clean:
 	rm -f ssh-ca tyr

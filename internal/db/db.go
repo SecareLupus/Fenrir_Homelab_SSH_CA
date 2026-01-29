@@ -513,7 +513,7 @@ func (d *DB) CheckPublicKeyOwnership(fingerprint string) (string, error) {
 		SELECT u.username 
 		FROM users u
 		JOIN public_keys pk ON u.id = pk.user_id
-		WHERE pk.fingerprint = ?
+		WHERE pk.fingerprint = ? AND pk.comment NOT LIKE 'REVOKED:%'
 	`, fingerprint).Scan(&username)
 	return username, err
 }

@@ -12,6 +12,8 @@ WORKDIR /app
 COPY --from=builder /app/ssh-ca .
 COPY --from=builder /app/tyr .
 COPY web/ ./web/
+COPY scripts/ ./scripts/
 COPY scripts/test-e2e-suite.sh ./test-e2e-suite.sh
+RUN chmod +x ./test-e2e-suite.sh ./scripts/*.sh
 RUN chmod +x ./test-e2e-suite.sh
 CMD ["./ssh-ca"]
