@@ -80,6 +80,7 @@ type Server struct {
 	sessionSecretsMu sync.RWMutex
 	systemSalt       []byte
 	rateLimiter      *rateLimiter
+	startTime        time.Time
 }
 
 type challenge struct {
@@ -110,6 +111,7 @@ func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 		challenges:       make(map[string]challenge),
 		webauthnSessions: make(map[string]*webauthn.SessionData),
 		rateLimiter:      newRateLimiter(),
+		startTime:        time.Now(),
 	}
 	// Session secret initialization is now handled by syncSessionSecrets called in NewServer.
 	// If the DB is empty (first run), syncSessionSecrets will attempt to migrate the config secret or generate a new one.
@@ -323,6 +325,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/admin/groups/members/toggle", s.handleAdminGroupsMemberToggle)
 	s.mux.HandleFunc("/admin/groups/ttl", s.handleAdminGroupsTTL)
 	s.mux.HandleFunc("/admin/groups/sudo/toggle", s.handleAdminGroupsToggleSudo)
+	s.mux.HandleFunc("/admin/approvals", s.handleAdminApprovals)
+	s.mux.HandleFunc("/admin/approvals/process", s.handleAdminApprove)
+	s.mux.HandleFunc("/cert/pickup", s.handleCertPickup)
 	s.mux.HandleFunc("/admin/users/ttl", s.handleAdminUsersTTL)
 	s.mux.HandleFunc("/krl", s.handleKRL)
 	s.mux.HandleFunc("/api/v1/ca/user", s.handleAPIUserCA)
@@ -977,6 +982,36 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		s.db.RegisterPublicKey(uid, fingerprint, pubKey.Type(), pubKeyStr, comment)
 		s.db.LogEvent(&uid, "key_enrolled", fingerprint)
+		s.db.LogEvent(&uid, "key_enrolled", fingerprint)
+	}
+
+	// 3.5 Check Approval Requirement
+	requiresApproval := false
+	for _, p := range principals {
+		// Only check groups (skip username/pi)
+		if p == username || p == "pi" {
+			continue
+		}
+		if reqArg, _ := s.db.GetGroupApprovalRequired(p); reqArg {
+			requiresApproval = true
+			break
+		}
+	}
+
+	// Admins bypass approval
+	if requiresApproval && !s.isAdmin(username) {
+		reason := r.FormValue("reason")
+		if reason == "" {
+			reason = "Certificate Request"
+		}
+		id, err := s.db.CreateCertRequest(username, pubKeyStr, strings.Join(principals, ","), reason)
+		if err != nil {
+			http.Error(w, "Failed to create request", 500)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprintf(w, "Request Pending Approval. ID: %d", id)
+		return
 	}
 
 	// 4. Sign Certificate
@@ -1830,7 +1865,28 @@ func (s *Server) handleAPIPAMBinary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("OK"))
+	resp := map[string]any{
+		"status":  "ok",
+		"version": config.Version,
+		"uptime":  time.Since(s.startTime).String(),
+		"db":      "connected",
+		"ca":      "connected",
+	}
+
+	if err := s.db.Ping(); err != nil {
+		resp["status"] = "error"
+		resp["db"] = err.Error()
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+
+	if err := s.ca.HealthCheck(); err != nil {
+		resp["status"] = "error"
+		resp["ca"] = err.Error()
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {

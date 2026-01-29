@@ -1,0 +1,53 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Certificate Approvals</h1>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">Pending Requests</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>User</th>
+                                <th>Principals</th>
+                                <th>Reason</th>
+                                <th>Requested At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Requests}}
+                            <tr>
+                                <td>{{.ID}}</td>
+                                <td>{{.Username}}</td>
+                                <td><small class="text-muted">{{.ValidPrincipals}}</small></td>
+                                <td>{{.Reason}}</td>
+                                <td>{{.CreatedAt.Format "Jan 02 15:04"}}</td>
+                                <td>
+                                    <form method="POST" action="/admin/approvals/process" class="d-flex gap-2">
+                                        <input type="hidden" name="id" value="{{.ID}}">
+                                        <button type="submit" name="action" value="approve" class="btn btn-sm btn-success">Approve</button>
+                                        <button type="submit" name="action" value="reject" class="btn btn-sm btn-danger">Reject</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {{else}}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">No pending requests</td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

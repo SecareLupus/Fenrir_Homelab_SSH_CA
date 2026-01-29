@@ -3,11 +3,12 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 func TestHandleHealth(t *testing.T) {
-	s := &Server{}
+	s := setupServer(t)
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	rr := httptest.NewRecorder()
 
@@ -17,8 +18,9 @@ func TestHandleHealth(t *testing.T) {
 		t.Errorf("handleHealth returned wrong status: got %v want %v", status, http.StatusOK)
 	}
 
-	if body := rr.Body.String(); body != "OK" {
-		t.Errorf("handleHealth returned wrong body: got %v want %v", body, "OK")
+	body := rr.Body.String()
+	if !strings.Contains(body, `"status":"ok"`) {
+		t.Errorf("handleHealth returned wrong body: %v", body)
 	}
 }
 

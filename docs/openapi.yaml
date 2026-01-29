@@ -12,7 +12,7 @@ paths:
     get:
       summary: Health Check
       responses:
-        '200':
+        "200":
           description: Server is healthy
           content:
             text/plain:
@@ -24,7 +24,7 @@ paths:
     get:
       summary: Get User CA Public Key
       responses:
-        '200':
+        "200":
           description: User CA Public Key in authorized_keys format
           content:
             text/plain:
@@ -35,7 +35,7 @@ paths:
     get:
       summary: Get Host CA Public Key
       responses:
-        '200':
+        "200":
           description: Host CA Public Key in authorized_keys format
           content:
             text/plain:
@@ -46,7 +46,7 @@ paths:
     get:
       summary: Get Key Revocation List (KRL)
       responses:
-        '200':
+        "200":
           description: KRL in binary formats
           content:
             application/octet-stream:
@@ -78,12 +78,43 @@ paths:
               required:
                 - pubkey
       responses:
-        '200':
+        "200":
           description: Signed SSH Certificate
           content:
             text/plain:
               schema:
                 type: string
+        "202":
+          description: Certificate Request Pending Approval
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Request Pending Approval. ID: 42"
+
+  /cert/pickup:
+    get:
+      summary: Retrieve Approved Certificate
+      parameters:
+        - in: query
+          name: id
+          schema:
+            type: integer
+          required: true
+          description: ID of the certificate request
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Signed SSH Certificate
+          content:
+            text/plain:
+              schema:
+                type: string
+        "202":
+          description: Request still pending
+        "403":
+          description: Request rejected or forbidden
 
   /api/v1/host/renew:
     post:
@@ -104,13 +135,13 @@ paths:
               required:
                 - pubkey
       responses:
-        '200':
+        "200":
           description: Signed Host Certificate
           content:
             text/plain:
               schema:
                 type: string
-        '401':
+        "401":
           description: Challenge required (for PoP)
           headers:
             X-SSH-Challenge:
@@ -123,7 +154,7 @@ paths:
       security:
         - CookieAuth: []
       responses:
-        '200':
+        "200":
           description: HTML Page
 
   /admin/groups:
@@ -132,7 +163,7 @@ paths:
       security:
         - CookieAuth: []
       responses:
-        '200':
+        "200":
           description: HTML Page
 
 components:

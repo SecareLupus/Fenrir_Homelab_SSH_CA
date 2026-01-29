@@ -130,6 +130,7 @@ func (d *DB) migrate() error {
 		name TEXT NOT NULL UNIQUE,
 		description TEXT,
 		sudo_enabled INTEGER NOT NULL DEFAULT 0, -- 1=true, 0=false
+		requires_approval INTEGER NOT NULL DEFAULT 0, -- 1=true, 0=false
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`,
 		`CREATE TABLE IF NOT EXISTS system_secrets (
@@ -159,6 +160,18 @@ func (d *DB) migrate() error {
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
 		UNIQUE(credential_id)
 	);`,
+		`CREATE TABLE IF NOT EXISTS cert_requests (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL,
+		pubkey TEXT NOT NULL,
+		valid_principals TEXT NOT NULL, -- JSON or comma-separated
+		reason TEXT,
+		status TEXT NOT NULL DEFAULT 'PENDING', -- PENDING, APPROVED, REJECTED
+		approver TEXT,
+		signed_certificate TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME
+	);`,
 	}
 
 	for _, s := range schemas {
@@ -177,8 +190,12 @@ func (d *DB) migrate() error {
 	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN api_key_hash TEXT")
 	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN last_seen DATETIME")
 	_, _ = d.Exec("ALTER TABLE groups ADD COLUMN sudo_enabled INTEGER NOT NULL DEFAULT 0")
+	_, _ = d.Exec("ALTER TABLE groups ADD COLUMN requires_approval INTEGER NOT NULL DEFAULT 0")
 	if _, err := d.Exec("CREATE TABLE IF NOT EXISTS system_secrets (id INTEGER PRIMARY KEY AUTOINCREMENT, key_type TEXT NOT NULL, secret_value TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME)"); err != nil {
 		log.Printf("Migration error (system_secrets): %v", err)
+	}
+	if _, err := d.Exec("CREATE TABLE IF NOT EXISTS cert_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, pubkey TEXT NOT NULL, valid_principals TEXT NOT NULL, reason TEXT, status TEXT NOT NULL DEFAULT 'PENDING', approver TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME)"); err != nil {
+		log.Printf("Migration error (cert_requests): %v", err)
 	}
 
 	return nil

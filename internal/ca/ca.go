@@ -238,6 +238,21 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 	return ssh.NewSignerFromKey(priv)
 }
 
+// HealthCheck verifies that the CA signers are operational.
+// It attempts to sign a dummy payload using the primary user singer.
+func (s *Service) HealthCheck() error {
+	if len(s.userSigners) == 0 {
+		return fmt.Errorf("no user signers available")
+	}
+	// Sign a dummy payload
+	// rand.Reader is safe to use for testing signing
+	_, err := s.userSigners[0].Sign(rand.Reader, []byte("health_check_payload"))
+	if err != nil {
+		return fmt.Errorf("signer check failed: %w", err)
+	}
+	return nil
+}
+
 // SignUserCertificate signs a public key for user authentication. It enforces
 // identity-based key IDs and principal restrictions.
 func (s *Service) SignUserCertificate(pubKey ssh.PublicKey, keyID string, principals []string, ttl uint64) (*ssh.Certificate, error) {
