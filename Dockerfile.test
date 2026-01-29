@@ -3,11 +3,11 @@ WORKDIR /app
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN go build -o ssh-ca ./cmd/server
-RUN go build -o tyr ./cmd/client
+RUN go build -o ssh-ca ./cmd/fenrir
+RUN go build -o tyr ./cmd/tyr
 
 FROM alpine:latest
-RUN apk add --no-cache ca-certificates openssh-client curl bash
+RUN apk add --no-cache ca-certificates openssh-client curl bash jq bind-tools
 WORKDIR /app
 COPY --from=builder /app/ssh-ca .
 COPY --from=builder /app/tyr .

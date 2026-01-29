@@ -12,6 +12,7 @@ package ca
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
@@ -20,7 +21,7 @@ import (
 	"path/filepath"
 	"time"
 
-	 "github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
+	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -88,7 +89,28 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 	// 1. Try to load
 	content, err := os.ReadFile(path)
 	if err == nil {
-		// Found key, parse it
+		// Detect if it's our custom encrypted PKCS#8
+		block, _ := pem.Decode(content)
+		if block != nil && block.Type == "ENCRYPTED PRIVATE KEY" {
+			if passphrase == "" {
+				return nil, fmt.Errorf("passphrase required for encrypted key")
+			}
+			decrypted, err := x509.DecryptPEMBlock(block, []byte(passphrase))
+			if err != nil {
+				return nil, fmt.Errorf("decrypt pem: %w", err)
+			}
+			// Parse the decrypted PKCS#8 bytes
+			// ssh.ParsePrivateKey handles PKCS#8
+			// We need to re-encode to PEM or use ParseRaw?
+			// ssh.ParsePrivateKey takes []byte which can be PEM or raw?
+			// Docs say: "The key must be PEM encoded."
+			// So we wrap it in PEM "PRIVATE KEY".
+
+			privPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: decrypted})
+			return ssh.ParsePrivateKey(privPEM)
+		}
+
+		// Fallback to standard parsing
 		if passphrase != "" {
 			return ssh.ParsePrivateKeyWithPassphrase(content, []byte(passphrase))
 		}
@@ -106,7 +128,16 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 
 	var block *pem.Block
 	if passphrase != "" {
-		block, err = ssh.MarshalPrivateKey(priv, passphrase)
+		// Ed25519 keys via ssh.MarshalPrivateKey don't support encryption securely/consistently
+		// Use PKCS#8 with AES-256 for encrypted keys
+		pkcs8Bytes, err := x509.MarshalPKCS8PrivateKey(priv)
+		if err != nil {
+			return nil, fmt.Errorf("marshal pkcs8: %w", err)
+		}
+		block, err = x509.EncryptPEMBlock(rand.Reader, "ENCRYPTED PRIVATE KEY", pkcs8Bytes, []byte(passphrase), x509.PEMCipherAES256)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt key: %w", err)
+		}
 	} else {
 		block, err = ssh.MarshalPrivateKey(priv, "")
 	}

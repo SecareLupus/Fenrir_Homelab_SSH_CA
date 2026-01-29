@@ -399,6 +399,15 @@ func (s *Server) csrfToken(r *http.Request) string {
 }
 
 func (s *Server) requireCSRF(w http.ResponseWriter, r *http.Request) bool {
+	// Allow bypassing CSRF if a valid API Key is provided
+	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
+		hash := auth.HashAPIKey(apiKey)
+		_, err := s.db.GetUserByAPIKey(hash)
+		if err == nil {
+			return true
+		}
+	}
+
 	token := r.Header.Get("X-CSRF-Token")
 	if token == "" {
 		token = r.FormValue("csrf_token")

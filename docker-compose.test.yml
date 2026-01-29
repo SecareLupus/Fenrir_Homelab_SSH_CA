@@ -32,13 +32,15 @@ services:
              echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config &&
              # Wait for Fenrir server, then fetch pubkey
              until curl -sf http://fenrir-server:8080/api/v1/ca/user > /etc/ssh/user_ca.pub; do sleep 1; done &&
-             # Create a test user for SSH
-             adduser -D testuser &&
+             # Create a test user for SSH (ignore if exists)
+             id -u testuser &>/dev/null || adduser -D testuser &&
              passwd -d testuser &&
              /usr/sbin/sshd -D -e"
-    depends_on:
-      fenrir-server:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "22"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
 
   test-runner:
     build:
@@ -52,7 +54,7 @@ services:
       fenrir-server:
         condition: service_healthy
       ssh-target:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   ca-data:
