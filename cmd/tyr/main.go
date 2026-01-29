@@ -175,7 +175,7 @@ func loginAndGetAPIKey(caURL, username, password string) (string, error) {
 	}
 
 	if respData.Error != "" {
-		return "", fmt.Errorf(respData.Error)
+		return "", fmt.Errorf("%s", respData.Error)
 	}
 
 	return respData.APIKey, nil
