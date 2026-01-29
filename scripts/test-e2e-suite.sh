@@ -31,6 +31,7 @@ ssh-keygen -t ed25519 -N "" -f id_test
 # 5. Sign Certificate using Curl
 echo "Requesting certificate via API..."
 curl -v -b cookies.txt --data-urlencode "pubkey=$(cat id_test.pub)" -d "ttl=3600" -d "principals=testuser" $CA_URL/cert/request > id_test-cert.pub || { echo "Curl failed"; exit 1; }
+chmod 600 id_test id_test-cert.pub
 
 if [ ! -s id_test-cert.pub ]; then
     echo "FAILED: Certificate issuance failed"

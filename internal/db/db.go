@@ -518,6 +518,16 @@ func (d *DB) CheckPublicKeyOwnership(fingerprint string) (string, error) {
 	return username, err
 }
 
+// IsPublicKeyRevoked checks if a key has been marked as revoked in the database.
+func (d *DB) IsPublicKeyRevoked(fingerprint string) bool {
+	var comment string
+	err := d.QueryRow("SELECT comment FROM public_keys WHERE fingerprint = ?", fingerprint).Scan(&comment)
+	if err != nil {
+		return false
+	}
+	return strings.HasPrefix(comment, "REVOKED:")
+}
+
 // CheckHostPublicKeyOwnership returns the hostname if the key is registered to a host
 func (d *DB) CheckHostPublicKeyOwnership(fingerprint string) (string, error) {
 	var hostname string

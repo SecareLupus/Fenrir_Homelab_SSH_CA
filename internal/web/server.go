@@ -739,6 +739,13 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 	var username string
 	isNewKey := false
 
+	// 1.5 Check for Revocation
+	if s.db.IsPublicKeyRevoked(fingerprint) {
+		log.Printf("Blocked certificate request for revoked key: %s", fingerprint)
+		http.Error(w, "This public key has been revoked and cannot be used for new certificates.", 403)
+		return
+	}
+
 	// 2. Authentication Decision
 	// Priority 1: Active Web Session or API Key in Header
 	username = s.authenticate(r)
