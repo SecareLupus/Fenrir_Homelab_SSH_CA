@@ -26,17 +26,20 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/auth"
 	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/config"
 
 	"golang.org/x/crypto/ssh"
 )
 
-// Service handles all CA operations
+// Service handles core certificate authority operations, including signing
+// user and host certificates, and managing root/intermediate keys.
 type Service struct {
 	userSigners []ssh.Signer
 	hostSigners []ssh.Signer
 }
 
+// GetUserCAPublicKey returns the public key for the primary user-signing CA.
 func (s *Service) GetUserCAPublicKey() ssh.PublicKey {
 	if len(s.userSigners) == 0 {
 		return nil
@@ -44,6 +47,7 @@ func (s *Service) GetUserCAPublicKey() ssh.PublicKey {
 	return s.userSigners[0].PublicKey()
 }
 
+// GetHostCAPublicKey returns the public key for the primary host-signing CA.
 func (s *Service) GetHostCAPublicKey() ssh.PublicKey {
 	if len(s.hostSigners) == 0 {
 		return nil
@@ -51,7 +55,8 @@ func (s *Service) GetHostCAPublicKey() ssh.PublicKey {
 	return s.hostSigners[0].PublicKey()
 }
 
-// New creates a new CA service, loading or generating keys as needed
+// New initializes a CA service. It loads software-based keys from the
+// configured KeyPath and, if enabled, integrates hardware-based PKCS#11 keys.
 func New(cfg *config.Config) (*Service, error) {
 	keyDir := cfg.KeyPath
 	if err := os.MkdirAll(keyDir, 0700); err != nil {
@@ -112,6 +117,7 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 			}
 			// Parse the decrypted PKCS#8 bytes
 			privPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: decrypted})
+			defer auth.Zero(decrypted)
 			return ssh.ParsePrivateKey(privPEM)
 		}
 
@@ -138,6 +144,7 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 		if err != nil {
 			return nil, fmt.Errorf("marshal pkcs8: %w", err)
 		}
+		defer auth.Zero(pkcs8Bytes)
 		block, err = encryptKey(pkcs8Bytes, passphrase)
 		if err != nil {
 			return nil, fmt.Errorf("encrypt key: %w", err)
@@ -164,7 +171,8 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 	return ssh.NewSignerFromKey(priv)
 }
 
-// SignUserCertificate signs a public key for user authentication
+// SignUserCertificate signs a public key for user authentication. It enforces
+// identity-based key IDs and principal restrictions.
 func (s *Service) SignUserCertificate(pubKey ssh.PublicKey, keyID string, principals []string, ttl uint64) (*ssh.Certificate, error) {
 	if len(s.userSigners) == 0 {
 		return nil, fmt.Errorf("no user signers available")
@@ -172,7 +180,7 @@ func (s *Service) SignUserCertificate(pubKey ssh.PublicKey, keyID string, princi
 	return s.sign(s.userSigners[0], pubKey, keyID, principals, ttl, ssh.UserCert)
 }
 
-// SignHostCertificate signs a public key for host authentication
+// SignHostCertificate signs a public key for host identification.
 func (s *Service) SignHostCertificate(pubKey ssh.PublicKey, keyID string, principals []string, ttl uint64) (*ssh.Certificate, error) {
 	if len(s.hostSigners) == 0 {
 		return nil, fmt.Errorf("no host signers available")
@@ -285,6 +293,7 @@ func encryptKey(data []byte, passphrase string) (*pem.Block, error) {
 	}
 
 	key := deriveKey(passphrase, salt)
+	defer auth.Zero(key)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -319,6 +328,7 @@ func decryptKey(block *pem.Block, passphrase string) ([]byte, error) {
 	}
 
 	key := deriveKey(passphrase, salt)
+	defer auth.Zero(key)
 	aesBlock, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -345,7 +355,9 @@ func deriveKey(passphrase string, salt []byte) []byte {
 		h := sha256.New()
 		h.Write(salt)
 		h.Write(key)
+		oldKey := key
 		key = h.Sum(nil)
+		auth.Zero(oldKey)
 	}
 	return key
 }

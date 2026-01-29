@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -33,6 +34,7 @@ func main() {
 	hostKeyPath := flag.String("host-key-path", "", "Path to host private key (for renewal)")
 	hostCertPath := flag.String("host-cert-path", "/etc/ssh/ssh_host_ed25519_key-cert.pub", "Path to host certificate")
 	apiKey := flag.String("api-key", os.Getenv("SSH_CA_API_KEY"), "API Key for host renewal")
+	syncPAM := flag.Bool("sync-pam", true, "Enable automated synchronization of pam_fenrir.so")
 	flag.Parse()
 
 	log.Printf("Starting SSH CA Agent (Syncing from %s every %s)", *caURL, *interval)
@@ -61,7 +63,17 @@ func main() {
 			}
 		}
 
-		// 4. Reload SSH if needed
+		// 4. Sync PAM Module (if enabled)
+		if *syncPAM {
+			if syncPAMModule(*caURL, *apiKey) {
+				log.Printf("Updated PAM module at /lib/security/pam_fenrir.so")
+				// We don't necessarily need to reload SSH for a .so update,
+				// but it's safe to mark as changed for consistency.
+				changed = true
+			}
+		}
+
+		// 5. Reload SSH if needed
 		if changed {
 			log.Println("Restarting sshd to apply changes...")
 			exec.Command("systemctl", "reload", "ssh").Run()
@@ -207,6 +219,64 @@ func syncFile(url, path, apiKey string) bool {
 	err = os.WriteFile(path, newData, 0644)
 	if err != nil {
 		log.Printf("Error writing %s: %v", path, err)
+		return false
+	}
+
+	return true
+}
+
+func syncPAMModule(caURL, apiKey string) bool {
+	// Detect architecture
+	arch := "amd64"
+	if out, err := exec.Command("uname", "-m").Output(); err == nil {
+		m := strings.TrimSpace(string(out))
+		if m == "aarch64" || m == "arm64" {
+			arch = "arm64"
+		}
+	}
+
+	url := fmt.Sprintf("%s/api/v1/ca/pam/binary?arch=%s", caURL, arch)
+	path := "/lib/security/pam_fenrir.so"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false
+	}
+	if apiKey != "" {
+		req.Header.Set("X-Host-API-Key", apiKey)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Error fetching PAM binary: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	newData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+
+	oldData, _ := os.ReadFile(path)
+	if bytes.Equal(newData, oldData) {
+		return false
+	}
+
+	// Write to a temporary file first, then rename to ensure atomicity
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, newData, 0644); err != nil {
+		log.Printf("Error writing temporary PAM binary: %v", err)
+		return false
+	}
+
+	if err := exec.Command("mv", tmpPath, path).Run(); err != nil {
+		log.Printf("Error installing PAM binary: %v", err)
 		return false
 	}
 

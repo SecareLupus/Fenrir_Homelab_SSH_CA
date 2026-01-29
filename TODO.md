@@ -59,13 +59,19 @@
 ## Phase 14: Quality & Observability
 
 - [ ] **CI/CD Integration**: Automate unit and E2E tests on pull requests.
-- [ ] **Increase Test Coverage**: Target ≥70% unit test coverage, focusing on auth handlers.
-- [ ] **Code Documentation**: Add doc comments to all public functions and types for better Godoc support.
-- [ ] **Architecture Documentation**: Create high-level design docs for the three-tier deployment model.
-- [ ] **Error Handling Audit**: Review codebase for silent failures (ignored errors in crypto/DB operations).
-- [ ] **Secret Zeroization**: Securely clear sensitive buffers (keys, passphrases) from memory after use.
-- [ ] **Security Headers**: Implement HSTS, CSP, and X-Frame-Options.
+- [x] **Increase Test Coverage**: Target ≥70% unit test coverage for core packages (Auth/CA/DB).
+- [x] **Code Documentation**: Add doc comments to all public functions and types for better Godoc support.
+- [x] **Architecture Documentation**: Create high-level design docs for the three-tier deployment model.
+- [x] **Error Handling Audit**: Review codebase for silent failures (ignored errors in crypto/DB operations).
+- [x] **Secret Zeroization**: Securely clear sensitive buffers (keys, passphrases) from memory after use.
+- [x] **Security Headers**: Implement HSTS, CSP, and X-Frame-Options.
 - [x] **Container Hardening**: Update Dockerfile to run as non-root user.
+
+### Phase 14b: PAM & Group Hardening (Adjunct)
+
+- [x] **Centralized Sudo Toggle**: Allow toggling group-based sudo access from the Web UI.
+- [x] **Automated PAM Sync**: Implement Gleipnir automation for `pam_fenrir.so` distribution.
+- [x] **Hardened PAM Loop**: Implement PoP and full cert verification in PAM module.
 
 ## Phase 15: Enterprise Reliability
 

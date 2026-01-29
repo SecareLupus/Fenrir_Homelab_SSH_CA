@@ -34,3 +34,13 @@ func HashAPIKey(key string, secret []byte) string {
 	h.Write([]byte(key))
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
+
+// Zero overwrites a byte slice with zeros to clear sensitive data from memory.
+func Zero(b []byte) {
+	if b == nil {
+		return
+	}
+	for i := range b {
+		b[i] = 0
+	}
+}

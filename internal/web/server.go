@@ -16,6 +16,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -51,6 +52,8 @@ const (
 
 var principalRegex = regexp.MustCompile(`^[a-zA-Z0-9\\._\\-]+$`)
 
+// Server is the primary web and API orchestration layer for Fenrir. It handles
+// authentication, routing, template rendering, and certificate requests.
 type Server struct {
 	cfg  *config.Config
 	db   *db.DB
@@ -94,6 +97,8 @@ type oidcStateData struct {
 	Expires int64  `json:"expires"`
 }
 
+// NewServer initializes a new web server instance with the provided configuration,
+// database, and CA service. It loads templates and sets up routes.
 func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 	s := &Server{
 		cfg:              cfg,
@@ -190,6 +195,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("/logout", s.handleLogout)
 	s.mux.HandleFunc("/mfa/setup", s.handleMFASetup)
+	// handleCertRequest is the primary endpoint for SSH certificate issuance via Tyr or Curl.
 	s.mux.HandleFunc("/cert/request", s.handleCertRequest)
 	s.mux.HandleFunc("/api/keys/generate", s.handleAPIKeyGenerate)
 	s.mux.HandleFunc("/api/auth/login", s.handleAPIAuthLogin)
@@ -209,10 +215,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/admin/groups/delete", s.handleAdminGroupsDelete)
 	s.mux.HandleFunc("/admin/groups/members/toggle", s.handleAdminGroupsMemberToggle)
 	s.mux.HandleFunc("/admin/groups/ttl", s.handleAdminGroupsTTL)
+	s.mux.HandleFunc("/admin/groups/sudo/toggle", s.handleAdminGroupsToggleSudo)
 	s.mux.HandleFunc("/admin/users/ttl", s.handleAdminUsersTTL)
 	s.mux.HandleFunc("/krl", s.handleKRL)
 	s.mux.HandleFunc("/api/v1/ca/user", s.handleAPIUserCA)
 	s.mux.HandleFunc("/api/v1/ca/host", s.handleAPIHostCA)
+	s.mux.HandleFunc("/api/v1/ca/pam/binary", s.handleAPIPAMBinary)
 	s.mux.HandleFunc("/api/v1/host/renew", s.handleAPIHostRenew)
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
@@ -220,8 +228,31 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/docs/openapi.yaml", s.handleOpenAPI)
 }
 
+// securityHeaders is a middleware that injects modern security policies (HSTS, CSP, etc.)
+// into every HTTP response.
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline' unpkg.com; script-src 'self' unpkg.com 'unsafe-inline'; img-src 'self' data:;")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) Start() error {
-	return http.ListenAndServe(s.cfg.BindAddr, s.mux)
+	handler := s.securityHeaders(s.mux)
+	return http.ListenAndServe(s.cfg.BindAddr, handler)
+}
+
+// safeRedirectPath validates a redirect path to prevent Open Redirect attacks.
+// It only allows relative paths starting with a single "/".
+func (s *Server) safeRedirectPath(target string) string {
+	if target == "" || !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
+		return "/"
+	}
+	return target
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -253,8 +284,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			if password == s.cfg.InitialAdminPassword {
 				hash, _ := auth.HashPassword(password)
 				if err := s.db.CreateUser("admin", hash); err == nil {
-					_ = s.db.SetUserEnabled("admin", true)
-					_, _ = s.db.Exec("UPDATE users SET role = 'admin' WHERE username = 'admin'")
+					if err := s.db.SetUserEnabled("admin", true); err != nil {
+						log.Printf("Failed to enable bootstrapped admin: %v", err)
+					}
+					if _, err := s.db.Exec("UPDATE users SET role = 'admin' WHERE username = 'admin'"); err != nil {
+						log.Printf("Failed to set admin role: %v", err)
+					}
 					log.Printf("Bootstrapped admin user successfully using INITIAL_ADMIN_PASSWORD")
 				} else {
 					log.Printf("Failed to bootstrap admin: %v", err)
@@ -783,10 +818,10 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 	// 2.5 Extract and validate Principals
 	principalsStr := r.FormValue("principals")
 
-	// Default principals: username + "pi" + all user's groups
+	// Default principals: username + "pi" + sudo-enabled groups
 	principals := []string{username, "pi"}
-	groups, _ := s.db.GetUserGroups(username)
-	principals = append(principals, groups...)
+	sudoGroups, _ := s.db.GetUserSudoGroups(username)
+	principals = append(principals, sudoGroups...)
 
 	// Logic: Admins can override, normal users are restricted for safety
 	if s.isAdmin(username) && principalsStr != "" {
@@ -1439,6 +1474,31 @@ func (s *Server) handleAdminGroupsTTL(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
 }
 
+// handleAdminGroupsToggleSudo handles enabling/disabling sudo permission for a group
+func (s *Server) handleAdminGroupsToggleSudo(w http.ResponseWriter, r *http.Request) {
+	username := s.authenticate(r)
+	if !s.isAdmin(username) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
+		return
+	}
+
+	groupName := r.FormValue("name")
+	enabled := r.FormValue("enabled") == "true"
+
+	if err := s.db.SetGroupSudoEnabled(groupName, enabled); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(username)
+	s.db.LogEvent(&uid, "group_sudo_toggle", fmt.Sprintf("group: %s, enabled: %v", groupName, enabled))
+
+	http.Redirect(w, r, s.safeRedirectPath(r.Header.Get("Referer")), http.StatusSeeOther)
+}
+
 func (s *Server) handleAdminUsersTTL(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
@@ -1508,7 +1568,11 @@ func (s *Server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 	// If TOTP fails, check backup codes
 	if !valid {
 		hash := auth.HashAPIKey(code, s.sessionSecret) // Using same hash as API keys
-		valid, _ = s.db.VerifyBackupCode(username, hash)
+		var err error
+		valid, err = s.db.VerifyBackupCode(username, hash)
+		if err != nil {
+			log.Printf("Error verifying backup code for %s: %v", username, err)
+		}
 	}
 
 	if valid {
@@ -1612,6 +1676,31 @@ func (s *Server) handleAPIHostCA(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(ssh.MarshalAuthorizedKey(s.ca.GetHostCAPublicKey()))
+}
+
+// handleAPIPAMBinary serves the pam_fenrir.so binary.
+func (s *Server) handleAPIPAMBinary(w http.ResponseWriter, r *http.Request) {
+	// Simple architecture detection based on a query param for this homelab MVP
+	arch := r.URL.Query().Get("arch")
+	filename := "pam_fenrir.so"
+	if arch == "arm64" {
+		filename = "pam_fenrir_arm64.so"
+	}
+
+	path := filepath.Join("bin", filename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		path = filepath.Join("bin", "pam_fenrir.so") // Fallback
+		data, err = os.ReadFile(path)
+		if err != nil {
+			http.Error(w, "PAM binary not found", 404)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.Write(data)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

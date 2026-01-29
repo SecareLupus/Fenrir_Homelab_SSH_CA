@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -27,14 +28,16 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// DB wraps the sql.DB connection
+// DB handles all persistent storage operations for users, keys, certificates,
+// and audit logs using SQLite with optional at-rest encryption.
 type DB struct {
 	*sql.DB
 	WebhookURL    string
 	EncryptionKey []byte
 }
 
-// Init opens the SQLite database and runs migrations
+// Init opens the SQLite database at the specified path and runs initial migrations.
+// Optional encryption key is used for at-rest encryption of MFA secrets.
 func Init(path, webhookURL, encKey string) (*DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -133,6 +136,7 @@ func (d *DB) migrate() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE,
 		description TEXT,
+		sudo_enabled INTEGER NOT NULL DEFAULT 0, -- 1=true, 0=false
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -171,13 +175,14 @@ func (d *DB) migrate() error {
 	_, _ = d.Exec("ALTER TABLE groups ADD COLUMN max_ttl INTEGER")
 	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN api_key_hash TEXT")
 	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN last_seen DATETIME")
+	_, _ = d.Exec("ALTER TABLE groups ADD COLUMN sudo_enabled INTEGER NOT NULL DEFAULT 0")
 
 	return nil
 }
 
 // ... (existing code)
 
-// CreateUser creates a new user. Returns error if username exists.
+// CreateUser registers a new user in the system. The password should already be hashed.
 func (d *DB) CreateUser(username, password string) error {
 	// Simple bcrypt hash
 	// NOTE: robust impl should be in auth package, but simplified here for single-binary design
@@ -204,7 +209,7 @@ func (d *DB) CreateAPIKey(userID int, keyHash, label string) error {
 	return err
 }
 
-// GetUserByAPIKey returns the username associated with a valid API key hash
+// GetUserByAPIKey returns the username associated with a valid SHA256-hashed API key.
 func (d *DB) GetUserByAPIKey(keyHash string) (string, error) {
 	var username string
 	query := `
@@ -496,7 +501,7 @@ func (d *DB) DeleteHost(hostname string) error {
 	return err
 }
 
-// RegisterPublicKey associates a public key with a user
+// RegisterPublicKey associates an SSH public key fingerprint with a specific user account.
 func (d *DB) RegisterPublicKey(userID int, fingerprint, keyType, content, comment string) error {
 	_, err := d.Exec(`
 		INSERT INTO public_keys (user_id, fingerprint, type, content, comment) 
@@ -537,7 +542,9 @@ func (d *DB) CheckHostPublicKeyOwnership(fingerprint string) (string, error) {
 
 // LogEvent writes an entry to the audit log
 func (d *DB) LogEvent(userID *int, event, metadata string) {
-	_, _ = d.Exec("INSERT INTO audit_logs (user_id, event, metadata) VALUES (?, ?, ?)", userID, event, metadata)
+	if _, err := d.Exec("INSERT INTO audit_logs (user_id, event, metadata) VALUES (?, ?, ?)", userID, event, metadata); err != nil {
+		log.Printf("DATABASE ERROR: failed to log event %s: %v", event, err)
+	}
 
 	if d.WebhookURL != "" {
 		go func() {
@@ -645,11 +652,12 @@ func (d *DB) GetUserRole(username string) (string, error) {
 
 // Group represents a logical group of users
 type Group struct {
-	ID          int
-	Name        string
-	Description string
-	MaxTTL      int
-	CreatedAt   time.Time
+	ID          int       `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	SudoEnabled bool      `json:"sudo_enabled"`
+	MaxTTL      int       `json:"max_ttl"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // CreateGroup creates a new group
@@ -666,7 +674,7 @@ func (d *DB) DeleteGroup(name string) error {
 
 // ListGroups returns all groups
 func (d *DB) ListGroups() ([]Group, error) {
-	rows, err := d.Query("SELECT id, name, COALESCE(description, ''), COALESCE(max_ttl, 0), created_at FROM groups ORDER BY name ASC")
+	rows, err := d.Query("SELECT id, name, COALESCE(description, ''), sudo_enabled, COALESCE(max_ttl, 0), created_at FROM groups ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -676,7 +684,7 @@ func (d *DB) ListGroups() ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var createdAt string
-		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.MaxTTL, &createdAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.SudoEnabled, &g.MaxTTL, &createdAt); err != nil {
 			return nil, err
 		}
 		g.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt) // SQLite default format
@@ -735,6 +743,32 @@ func (d *DB) GetUserGroups(username string) ([]string, error) {
 	return names, nil
 }
 
+// GetUserSudoGroups returns group names a user belongs to that have sudo enabled
+func (d *DB) GetUserSudoGroups(username string) ([]string, error) {
+	query := `
+		SELECT g.name
+		FROM groups g
+		JOIN user_groups ug ON g.id = ug.group_id
+		JOIN users u ON ug.user_id = u.id
+		WHERE u.username = ? AND g.sudo_enabled = 1
+	`
+	rows, err := d.Query(query, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
 // GetUserGroupsByGroupName returns all usernames belonging to a group
 func (d *DB) GetUserGroupsByGroupName(groupName string) ([]string, error) {
 	query := `
@@ -772,6 +806,16 @@ func (d *DB) SetUserMaxTTL(username string, ttl int) error {
 // SetGroupMaxTTL sets the maximum allow TTL for a group
 func (d *DB) SetGroupMaxTTL(groupName string, ttl int) error {
 	_, err := d.Exec("UPDATE groups SET max_ttl = ? WHERE name = ?", ttl, groupName)
+	return err
+}
+
+// SetGroupSudoEnabled toggles a group's sudo permission status
+func (d *DB) SetGroupSudoEnabled(groupName string, enabled bool) error {
+	val := 0
+	if enabled {
+		val = 1
+	}
+	_, err := d.Exec("UPDATE groups SET sudo_enabled = ? WHERE name = ?", val, groupName)
 	return err
 }
 
