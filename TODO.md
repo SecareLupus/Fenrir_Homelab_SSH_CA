@@ -43,18 +43,18 @@
 
 ## Phase 12: Immediate Security Remediation (Critical)
 
-- [ ] **Fix Path Traversal**: Sanitize template paths in `renderPage` to prevent directory traversal.
-- [ ] **Secure Session Secrets**: Fail-fast on secret generation failure and remove hardcoded fallbacks.
-- [ ] **Reverse Proxy Support**: Fix `Secure` cookie flag by detecting `X-Forwarded-Proto`.
-- [ ] **Strict Environment Check**: Require critical variables (`SESSION_SECRET`, `CA_PASSPHRASE`) on startup in production.
+- [x] **Fix Path Traversal**: Sanitize template paths in `renderPage` to prevent directory traversal.
+- [x] **Secure Session Secrets**: Fail-fast on secret generation failure and remove hardcoded fallbacks.
+- [x] **Reverse Proxy Support**: Fix `Secure` cookie flag by detecting `X-Forwarded-Proto`.
+- [x] **Strict Environment Check**: Require critical variables (`SESSION_SECRET`, `CA_PASSPHRASE`) on startup in production.
 
 ## Phase 13: Hardening & Validation
 
-- [ ] **Input Validation**: Implement regex validation for principals and strict TTL enforcement.
-- [ ] **Modernize CA Crypto**: Replace deprecated `x509.EncryptPEMBlock` with PKCS#8 or modern equivalents.
-- [ ] **API Key Strengthening**: Upgrade API key hashing from bare SHA256 to HMAC or bcrypt.
-- [ ] **Secure Bootstrap**: Require bootstrap token for first admin creation.
-- [ ] **Rate Limiting**: Add login and MFA rate limiting.
+- [x] **Input Validation**: Implement regex validation for principals and strict TTL enforcement.
+- [x] **Modernize CA Crypto**: Replace deprecated `x509.EncryptPEMBlock` with PKCS#8 or modern equivalents.
+- [x] **API Key Strengthening**: Upgrade API key hashing from bare SHA256 to HMAC or bcrypt.
+- [x] **Secure Bootstrap**: Require bootstrap token for first admin creation.
+- [x] **Rate Limiting**: Add login and MFA rate limiting.
 
 ## Phase 14: Quality & Observability
 
@@ -65,7 +65,7 @@
 - [ ] **Error Handling Audit**: Review codebase for silent failures (ignored errors in crypto/DB operations).
 - [ ] **Secret Zeroization**: Securely clear sensitive buffers (keys, passphrases) from memory after use.
 - [ ] **Security Headers**: Implement HSTS, CSP, and X-Frame-Options.
-- [ ] **Container Hardening**: Update Dockerfile to run as non-root user.
+- [x] **Container Hardening**: Update Dockerfile to run as non-root user.
 
 ## Phase 15: Enterprise Reliability
 
@@ -77,7 +77,7 @@
 
 ## Phase 16: Advanced Security & Compliance
 
-- [ ] **MFA Rate Limiting**: Limit brute-force attempts on TOTP and backup codes.
+- [x] **MFA Rate Limiting**: Limit brute-force attempts on TOTP and backup codes.
 - [ ] **KRL Sync Optimization**: Implement faster revocation propagation to reduce the 5-minute sync window.
 - [ ] **PoP & Auth Integration Tests**: Specific integration tests for Proof-of-Possession and renewal flows.
 - [ ] **Professional Audit Readiness**: Final sweep of the security model and documentation for external review.

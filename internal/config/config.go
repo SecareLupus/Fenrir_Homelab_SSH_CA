@@ -23,14 +23,16 @@ type Config struct {
 	KeyPath  string
 	Mode     string // "online" or "offline"
 	// Security configuration
-	PKCS11            PKCS11Config   `json:"pkcs11"`
-	HardenedTrustSync bool           `json:"hardened_trust_sync"`
-	OIDC              OIDCConfig     `json:"oidc"`
-	WebAuthn          WebAuthnConfig `json:"webauthn"`
-	AuditWebhookURL   string         `json:"audit_webhook_url"`
-	CAPassphrase      string         `json:"ca_passphrase"`
-	DBEncryptionKey   string         `json:"db_encryption_key"`
-	SessionSecret     string         `json:"session_secret"`
+	PKCS11               PKCS11Config   `json:"pkcs11"`
+	HardenedTrustSync    bool           `json:"hardened_trust_sync"`
+	OIDC                 OIDCConfig     `json:"oidc"`
+	WebAuthn             WebAuthnConfig `json:"webauthn"`
+	AuditWebhookURL      string         `json:"audit_webhook_url"`
+	CAPassphrase         string         `json:"ca_passphrase"`
+	DBEncryptionKey      string         `json:"db_encryption_key"`
+	SessionSecret        string         `json:"session_secret"`
+	InitialAdminPassword string         `json:"initial_admin_password"`
+	Production           bool           `json:"production"`
 }
 
 type OIDCConfig struct {
@@ -48,13 +50,13 @@ type WebAuthnConfig struct {
 }
 
 type PKCS11Config struct {
-	Enabled       bool   `json:"enabled"`
-	Module        string `json:"module"`
-	TokenLabel    string `json:"token_label"`
-	PIN           string `json:"pin"`
-	KeyLabel      string `json:"key_label"`
-	UserKeyLabel  string `json:"user_key_label"`
-	HostKeyLabel  string `json:"host_key_label"`
+	Enabled      bool   `json:"enabled"`
+	Module       string `json:"module"`
+	TokenLabel   string `json:"token_label"`
+	PIN          string `json:"pin"`
+	KeyLabel     string `json:"key_label"`
+	UserKeyLabel string `json:"user_key_label"`
+	HostKeyLabel string `json:"host_key_label"`
 }
 
 // Load reads configuration from environment variables or defaults
@@ -90,6 +92,8 @@ func Load() (*Config, error) {
 	dbEncKey := os.Getenv("DB_ENCRYPTION_KEY")
 	webhookURL := os.Getenv("AUDIT_WEBHOOK_URL")
 	sessionSecret := os.Getenv("SESSION_SECRET")
+	initialAdminPassword := os.Getenv("INITIAL_ADMIN_PASSWORD")
+	production := os.Getenv("FENRIR_ENV") == "production"
 
 	rpName := os.Getenv("WEBAUTHN_RP_DISPLAY_NAME")
 	if rpName == "" {
@@ -139,9 +143,11 @@ func Load() (*Config, error) {
 			RPID:          rpID,
 			RPOrigin:      rpOrigin,
 		},
-		AuditWebhookURL: webhookURL,
-		CAPassphrase:    caPassphrase,
-		DBEncryptionKey: dbEncKey,
-		SessionSecret:   sessionSecret,
+		AuditWebhookURL:      webhookURL,
+		CAPassphrase:         caPassphrase,
+		DBEncryptionKey:      dbEncKey,
+		SessionSecret:        sessionSecret,
+		InitialAdminPassword: initialAdminPassword,
+		Production:           production,
 	}, nil
 }

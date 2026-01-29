@@ -144,3 +144,25 @@ func TestCertRequest_Authenticated(t *testing.T) {
 		t.Errorf("expected 401/403, got %d. Body: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestPrincipalValidation(t *testing.T) {
+
+	// Bypass auth for simplicity by injecting a mock session if we could,
+	// but here we just test the validation logic in the handler by calling it as admin.
+	// Actually, we'll just test the regex directly if we could, but let's try the handler.
+
+	validPrincipals := []string{"user", "host.example.com", "user_123", "group-name"}
+	invalidPrincipals := []string{"user;rm -rf /", "host space", "invalid@char", "shell`backtick`"}
+
+	for _, p := range validPrincipals {
+		if !principalRegex.MatchString(p) {
+			t.Errorf("expected %s to be valid", p)
+		}
+	}
+
+	for _, p := range invalidPrincipals {
+		if principalRegex.MatchString(p) {
+			t.Errorf("expected %s to be invalid", p)
+		}
+	}
+}

@@ -37,6 +37,8 @@ import (
 	"github.com/xlzd/gotp"
 	"golang.org/x/crypto/ssh"
 
+	"regexp"
+
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"golang.org/x/oauth2"
@@ -46,6 +48,8 @@ const (
 	sessionCookieName   = "session_user"
 	oidcStateCookieName = "oidc_state"
 )
+
+var principalRegex = regexp.MustCompile(`^[a-zA-Z0-9\\._\\-]+$`)
 
 type Server struct {
 	cfg  *config.Config
@@ -70,6 +74,7 @@ type Server struct {
 	webauthnSessionsMu sync.Mutex
 
 	sessionSecret []byte
+	rateLimiter   *rateLimiter
 }
 
 type challenge struct {
@@ -97,19 +102,22 @@ func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 		mux:              http.NewServeMux(),
 		challenges:       make(map[string]challenge),
 		webauthnSessions: make(map[string]*webauthn.SessionData),
+		rateLimiter:      newRateLimiter(),
 	}
 	if len(cfg.SessionSecret) > 0 {
 		s.sessionSecret = []byte(cfg.SessionSecret)
 	} else if len(cfg.DBEncryptionKey) > 0 {
 		s.sessionSecret = []byte(cfg.DBEncryptionKey)
 	} else {
+		if cfg.Production {
+			log.Fatalf("FATAL: SESSION_SECRET must be set in production mode")
+		}
 		secret := make([]byte, 32)
 		if _, err := rand.Read(secret); err != nil {
-			log.Printf("failed to generate session secret: %v", err)
-			s.sessionSecret = []byte("insecure-session-secret")
+			log.Fatalf("failed to generate session secret: %v", err)
 		} else {
 			s.sessionSecret = secret
-			log.Printf("SESSION_SECRET not set; using ephemeral in-memory secret")
+			log.Printf("WARNING: SESSION_SECRET not set; using ephemeral in-memory secret. Sessions will be invalidated on restart.")
 		}
 	}
 	if cfg.OIDC.Enabled {
@@ -225,31 +233,36 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	// 1. Check if ANY user exists. If not, bootstrap admin.
-	// This is a simple "first run" check.
-	// Optimization: This check should be cached or done at startup, but fine here for MVP.
-	_, err := s.db.GetUserHash("admin") // Assuming admin is the bootstrap target
-	if err != nil {
-		// If admin doesn't exist, and we're trying to log in as admin...
-		// OR: strictly check count.
-		// Simpler: If username is "admin" and DB has no users...
-		// Let's rely on standard bootstrap if "admin" retrieval fails.
+	if !s.rateLimiter.allow(r.RemoteAddr) {
+		log.Printf("Rate limit hit for %s", r.RemoteAddr)
+		s.renderPage(w, "login.html", map[string]any{"Error": "Too many attempts. Please try again in a few minutes."})
+		return
+	}
 
-		// ACTUALLY: Let's create admin if it doesn't exist AND this is the first login attempt.
-		// Use a specific "First Run" logic or just bootstrap silently if user is admin.
+	// 1. Check if ANY user exists (bootstrapping logic)
+	_, err := s.db.GetUserHash("admin")
+	if err != nil {
+		// If admin doesn't exist, check INITIAL_ADMIN_PASSWORD
 		if username == "admin" {
-			// Check if we can create it
-			hash, _ := auth.HashPassword(password)
-			if err := s.db.CreateUser("admin", hash); err == nil {
-				// Created successfully, proceed to login
-				_ = s.db.SetUserEnabled("admin", true) // Ensure enabled
-				// We don't need to explicitly set role as 'admin' here because
-				// the DB schema defaults to 'user', let's fix that check or set it.
-				// Actually, let's just make sure admin has admin role.
-				// The schema migration adds role 'user' by default.
-				// Let's explicitly set it for bootstrap.
-				_, _ = s.db.Exec("UPDATE users SET role = 'admin' WHERE username = 'admin'")
-				log.Printf("Bootstrapped admin user")
+			if s.cfg.InitialAdminPassword == "" {
+				log.Printf("Bootstrapping BLOCKED: Admin user doesn't exist and INITIAL_ADMIN_PASSWORD is not set.")
+				s.renderPage(w, "login.html", map[string]any{"Error": "Bootstrapping required. Set INITIAL_ADMIN_PASSWORD to create the admin account."})
+				return
+			}
+
+			if password == s.cfg.InitialAdminPassword {
+				hash, _ := auth.HashPassword(password)
+				if err := s.db.CreateUser("admin", hash); err == nil {
+					_ = s.db.SetUserEnabled("admin", true)
+					_, _ = s.db.Exec("UPDATE users SET role = 'admin' WHERE username = 'admin'")
+					log.Printf("Bootstrapped admin user successfully using INITIAL_ADMIN_PASSWORD")
+				} else {
+					log.Printf("Failed to bootstrap admin: %v", err)
+				}
+			} else {
+				log.Printf("Attempted bootstrap with WRONG INITIAL_ADMIN_PASSWORD")
+				s.renderPage(w, "login.html", map[string]any{"Error": "Invalid initial admin password."})
+				return
 			}
 		}
 	}
@@ -270,6 +283,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Value:    username,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   s.isSecure(r),
 			Expires:  time.Now().Add(5 * time.Minute),
 		})
 		http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
@@ -365,11 +379,21 @@ func (s *Server) setSession(w http.ResponseWriter, r *http.Request, username str
 		Value:    cookieValue,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil, // Set secure if HTTPS
+		Secure:   s.isSecure(r), // Properly handle HTTPS/Proxy
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(24 * time.Hour),
 	})
 	return nil
+}
+
+func (s *Server) isSecure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if r.Header.Get("X-Forwarded-Proto") == "https" {
+		return true
+	}
+	return false
 }
 
 func (s *Server) getSession(r *http.Request) (*sessionData, bool) {
@@ -401,7 +425,7 @@ func (s *Server) csrfToken(r *http.Request) string {
 func (s *Server) requireCSRF(w http.ResponseWriter, r *http.Request) bool {
 	// Allow bypassing CSRF if a valid API Key is provided
 	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
-		hash := auth.HashAPIKey(apiKey)
+		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
 		_, err := s.db.GetUserByAPIKey(hash)
 		if err == nil {
 			return true
@@ -470,7 +494,7 @@ func (s *Server) handleLoginOIDC(w http.ResponseWriter, r *http.Request) {
 		Value:    stateCookie,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   s.isSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(10 * time.Minute),
 	})
@@ -578,7 +602,7 @@ func (s *Server) authenticate(r *http.Request) string {
 	// 1. Check for API Key in header
 	apiKey := r.Header.Get("X-API-Key")
 	if apiKey != "" {
-		hash := auth.HashAPIKey(apiKey)
+		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
 		username, err := s.db.GetUserByAPIKey(hash)
 		if err == nil {
 			return username
@@ -764,6 +788,10 @@ func (s *Server) handleCertRequest(w http.ResponseWriter, r *http.Request) {
 		for _, p := range parts {
 			trimmed := strings.TrimSpace(p)
 			if trimmed != "" {
+				if !principalRegex.MatchString(trimmed) {
+					http.Error(w, "Invalid principal format: "+trimmed, 400)
+					return
+				}
 				cleanParts = append(cleanParts, trimmed)
 			}
 		}
@@ -843,7 +871,7 @@ func (s *Server) handleAPIKeyGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiKey := hex.EncodeToString(rawKey)
-	hash := auth.HashAPIKey(apiKey)
+	hash := auth.HashAPIKey(apiKey, s.sessionSecret)
 
 	if err := s.db.CreateAPIKey(userId, hash, "Default Key"); err != nil {
 		log.Printf("Error storing API key: %v", err)
@@ -909,7 +937,7 @@ func (s *Server) handleAPIAuthLogin(w http.ResponseWriter, r *http.Request) {
 		totp := gotp.NewDefaultTOTP(mfaSecret)
 		if !totp.Verify(req.TOTPCode, time.Now().Unix()) {
 			// Check backup codes
-			hash := auth.HashAPIKey(req.TOTPCode) // Using same hash as API keys
+			hash := auth.HashAPIKey(req.TOTPCode, s.sessionSecret) // Using same hash as API keys
 			valid, _ := s.db.VerifyBackupCode(req.Username, hash)
 			if !valid {
 				http.Error(w, "Invalid MFA code", 401)
@@ -931,7 +959,7 @@ func (s *Server) handleAPIAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiKey := hex.EncodeToString(rawKey)
-	keyHash := auth.HashAPIKey(apiKey)
+	keyHash := auth.HashAPIKey(apiKey, s.sessionSecret)
 
 	if err := s.db.CreateAPIKey(userId, keyHash, "CLI Generated Key"); err != nil {
 		log.Printf("Error storing API key: %v", err)
@@ -959,6 +987,27 @@ func (s *Server) renderPage(w http.ResponseWriter, page string, data any) {
 		m["Version"] = config.Version
 	} else if data == nil {
 		data = map[string]any{"Version": config.Version}
+	}
+
+	allowed := map[string]bool{
+		"login.html":                true,
+		"dashboard.html":            true,
+		"admin_offline.html":        true,
+		"admin_users.html":          true,
+		"admin_audit.html":          true,
+		"admin_audit_identity.html": true,
+		"admin_host_sign.html":      true,
+		"admin_host_apikey.html":    true,
+		"admin_groups.html":         true,
+		"login_mfa.html":            true,
+		"mfa_setup.html":            true,
+		"mfa_backup_codes.html":     true,
+		"admin_hosts.html":          true,
+	}
+	if !allowed[page] {
+		log.Printf("Blocked template traversal attempt: %s", page)
+		http.Error(w, "Invalid template", 400)
+		return
 	}
 
 	tmpl, err := template.ParseFiles(
@@ -1125,11 +1174,16 @@ func (s *Server) handleAdminHostSign(w http.ResponseWriter, r *http.Request) {
 	for _, p := range parts {
 		trimmed := strings.TrimSpace(p)
 		if trimmed != "" {
+			if !principalRegex.MatchString(trimmed) {
+				http.Error(w, "Invalid hostname/principal format: "+trimmed, 400)
+				return
+			}
 			principals = append(principals, trimmed)
 		}
 	}
 	if len(principals) == 0 {
-		principals = []string{hostname}
+		http.Error(w, "Hostname/Principals required", 400)
+		return
 	}
 
 	cert, err := s.ca.SignHostCertificate(pubKey, hostname, principals, ttl)
@@ -1173,7 +1227,7 @@ func (s *Server) handleAdminHostAPIKey(w http.ResponseWriter, r *http.Request) {
 	rand.Read(key)
 	apiKey := base64.StdEncoding.EncodeToString(key)
 
-	hash := auth.HashAPIKey(apiKey)
+	hash := auth.HashAPIKey(apiKey, s.sessionSecret)
 	if err := s.db.SetHostAPIKey(hostname, hash); err != nil {
 		http.Error(w, "Failed to save API key", 500)
 		return
@@ -1446,7 +1500,7 @@ func (s *Server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 
 	// If TOTP fails, check backup codes
 	if !valid {
-		hash := auth.HashAPIKey(code) // Using same hash as API keys
+		hash := auth.HashAPIKey(code, s.sessionSecret) // Using same hash as API keys
 		valid, _ = s.db.VerifyBackupCode(username, hash)
 	}
 
@@ -1531,7 +1585,7 @@ func (s *Server) generateBackupCodes(username string) ([]string, error) {
 		}
 		plain := hex.EncodeToString(code)
 		plainCodes = append(plainCodes, plain)
-		hashedCodes = append(hashedCodes, auth.HashAPIKey(plain))
+		hashedCodes = append(hashedCodes, auth.HashAPIKey(plain, s.sessionSecret))
 	}
 	err := s.db.SetBackupCodes(username, hashedCodes)
 	return plainCodes, err
@@ -1623,7 +1677,7 @@ func (s *Server) handleAPIHostRenew(w http.ResponseWriter, r *http.Request) {
 	var hostname string
 
 	if apiKey != "" {
-		hash := auth.HashAPIKey(apiKey)
+		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
 		hostname, err = s.db.GetHostByAPIKey(hash)
 		if err != nil {
 			http.Error(w, "Unauthorized (Invalid API Key)", 401)
@@ -1716,7 +1770,7 @@ func (s *Server) checkHardenedAuth(w http.ResponseWriter, r *http.Request) bool 
 
 	// 1. Check for Host API Key
 	if apiKey := r.Header.Get("X-Host-API-Key"); apiKey != "" {
-		hash := auth.HashAPIKey(apiKey)
+		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
 		_, err := s.db.GetHostByAPIKey(hash)
 		if err == nil {
 			return true
@@ -1725,7 +1779,7 @@ func (s *Server) checkHardenedAuth(w http.ResponseWriter, r *http.Request) bool 
 
 	// 2. Check for User API Key
 	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
-		hash := auth.HashAPIKey(apiKey)
+		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
 		_, err := s.db.GetUserByAPIKey(hash)
 		if err == nil {
 			return true
@@ -1935,4 +1989,33 @@ func (s *Server) handleWebAuthnLoginFinish(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.Write([]byte("Login successful"))
+}
+
+// --- Rate Limiting ---
+
+type rateLimiter struct {
+	attempts map[string][]time.Time
+	mu       sync.Mutex
+}
+
+func newRateLimiter() *rateLimiter {
+	return &rateLimiter{attempts: make(map[string][]time.Time)}
+}
+
+func (rl *rateLimiter) allow(key string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	var newAttempts []time.Time
+	for _, t := range rl.attempts[key] {
+		if now.Sub(t) < 5*time.Minute {
+			newAttempts = append(newAttempts, t)
+		}
+	}
+	if len(newAttempts) >= 10 { // 10 attempts per 5 mins
+		rl.attempts[key] = newAttempts
+		return false
+	}
+	rl.attempts[key] = append(newAttempts, now)
+	return true
 }

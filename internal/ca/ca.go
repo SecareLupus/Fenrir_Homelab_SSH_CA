@@ -10,12 +10,17 @@
 package ca
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -89,23 +94,23 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 	// 1. Try to load
 	content, err := os.ReadFile(path)
 	if err == nil {
-		// Detect if it's our custom encrypted PKCS#8
 		block, _ := pem.Decode(content)
-		if block != nil && block.Type == "ENCRYPTED PRIVATE KEY" {
+		if block != nil && (block.Type == "ENCRYPTED PRIVATE KEY" || block.Type == "ENCRYPTED FENRIR KEY") {
 			if passphrase == "" {
 				return nil, fmt.Errorf("passphrase required for encrypted key")
 			}
-			decrypted, err := x509.DecryptPEMBlock(block, []byte(passphrase))
+			var decrypted []byte
+			if block.Type == "ENCRYPTED PRIVATE KEY" {
+				// Backward compatibility for deprecated x509 encryption
+				decrypted, err = x509.DecryptPEMBlock(block, []byte(passphrase))
+			} else {
+				// Modern AES-GCM encryption
+				decrypted, err = decryptKey(block, passphrase)
+			}
 			if err != nil {
-				return nil, fmt.Errorf("decrypt pem: %w", err)
+				return nil, fmt.Errorf("decrypt key: %w", err)
 			}
 			// Parse the decrypted PKCS#8 bytes
-			// ssh.ParsePrivateKey handles PKCS#8
-			// We need to re-encode to PEM or use ParseRaw?
-			// ssh.ParsePrivateKey takes []byte which can be PEM or raw?
-			// Docs say: "The key must be PEM encoded."
-			// So we wrap it in PEM "PRIVATE KEY".
-
 			privPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: decrypted})
 			return ssh.ParsePrivateKey(privPEM)
 		}
@@ -128,13 +133,12 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 
 	var block *pem.Block
 	if passphrase != "" {
-		// Ed25519 keys via ssh.MarshalPrivateKey don't support encryption securely/consistently
-		// Use PKCS#8 with AES-256 for encrypted keys
+		// Modern approach: PKCS#8 + AES-GCM with SHA256 KDF
 		pkcs8Bytes, err := x509.MarshalPKCS8PrivateKey(priv)
 		if err != nil {
 			return nil, fmt.Errorf("marshal pkcs8: %w", err)
 		}
-		block, err = x509.EncryptPEMBlock(rand.Reader, "ENCRYPTED PRIVATE KEY", pkcs8Bytes, []byte(passphrase), x509.PEMCipherAES256)
+		block, err = encryptKey(pkcs8Bytes, passphrase)
 		if err != nil {
 			return nil, fmt.Errorf("encrypt key: %w", err)
 		}
@@ -222,7 +226,9 @@ func (s *Service) SignIntermediateUserCertificate(pubKey ssh.PublicKey, keyID st
 	expires := now.Add(time.Duration(ttl) * time.Second)
 
 	var serial uint64
-	binary.Read(rand.Reader, binary.BigEndian, &serial)
+	if err := binary.Read(rand.Reader, binary.BigEndian, &serial); err != nil {
+		return nil, fmt.Errorf("read random serial: %w", err)
+	}
 
 	cert := &ssh.Certificate{
 		KeyId:       keyID,
@@ -231,9 +237,6 @@ func (s *Service) SignIntermediateUserCertificate(pubKey ssh.PublicKey, keyID st
 		Key:         pubKey,
 		ValidAfter:  uint64(now.Unix()),
 		ValidBefore: uint64(expires.Unix()),
-		// Critical for intermediate CA: permit-X11-forwarding etc are not needed,
-		// but we might want to restrict principals in future version.
-		// For now, identity is what matters.
 	}
 
 	if len(s.userSigners) == 0 {
@@ -251,7 +254,9 @@ func (s *Service) SignIntermediateHostCertificate(pubKey ssh.PublicKey, keyID st
 	expires := now.Add(time.Duration(ttl) * time.Second)
 
 	var serial uint64
-	binary.Read(rand.Reader, binary.BigEndian, &serial)
+	if err := binary.Read(rand.Reader, binary.BigEndian, &serial); err != nil {
+		return nil, fmt.Errorf("read random serial: %w", err)
+	}
 
 	cert := &ssh.Certificate{
 		KeyId:       keyID,
@@ -269,4 +274,78 @@ func (s *Service) SignIntermediateHostCertificate(pubKey ssh.PublicKey, keyID st
 		return nil, err
 	}
 	return cert, nil
+}
+
+// --- Modern Encryption Helpers ---
+
+func encryptKey(data []byte, passphrase string) (*pem.Block, error) {
+	salt := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return nil, err
+	}
+
+	key := deriveKey(passphrase, salt)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	ciphertext := gcm.Seal(nonce, nonce, data, nil)
+
+	return &pem.Block{
+		Type: "ENCRYPTED FENRIR KEY",
+		Headers: map[string]string{
+			"Salt": hex.EncodeToString(salt),
+			"KDF":  "SHA256-10000",
+		},
+		Bytes: ciphertext,
+	}, nil
+}
+
+func decryptKey(block *pem.Block, passphrase string) ([]byte, error) {
+	salt, err := hex.DecodeString(block.Headers["Salt"])
+	if err != nil {
+		return nil, fmt.Errorf("invalid salt")
+	}
+
+	key := deriveKey(passphrase, salt)
+	aesBlock, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(aesBlock)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(block.Bytes) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	nonce, ciphertext := block.Bytes[:nonceSize], block.Bytes[nonceSize:]
+	return gcm.Open(nil, nonce, ciphertext, nil)
+}
+
+func deriveKey(passphrase string, salt []byte) []byte {
+	// Simple but better-than-MD5 KDF
+	key := []byte(passphrase)
+	for i := 0; i < 10000; i++ {
+		h := sha256.New()
+		h.Write(salt)
+		h.Write(key)
+		key = h.Sum(nil)
+	}
+	return key
 }

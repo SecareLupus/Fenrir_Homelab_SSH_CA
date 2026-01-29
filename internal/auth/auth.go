@@ -10,6 +10,7 @@
 package auth
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"fmt"
 
@@ -26,7 +27,10 @@ func CheckPassword(password, hash string) bool {
 	return err == nil
 }
 
-func HashAPIKey(key string) string {
-	hash := sha256.Sum256([]byte(key))
-	return fmt.Sprintf("%x", hash)
+// HashAPIKey computes a secure HMAC of the API key using a server-side secret.
+// This prevents offline rainbow table attacks if the database is leaked.
+func HashAPIKey(key string, secret []byte) string {
+	h := hmac.New(sha256.New, secret)
+	h.Write([]byte(key))
+	return fmt.Sprintf("%x", h.Sum(nil))
 }

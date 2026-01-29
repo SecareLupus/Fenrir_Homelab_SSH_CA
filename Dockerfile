@@ -19,6 +19,9 @@ RUN CGO_ENABLED=1 GOOS=linux go build -o fenrir ./cmd/fenrir
 # Final stage
 FROM alpine:latest
 
+# Create a non-root user
+RUN addgroup -S fenrir && adduser -S fenrir -G fenrir
+
 WORKDIR /app
 
 # Install runtime dependencies
@@ -30,8 +33,15 @@ COPY --from=builder /app/fenrir .
 # Copy web assets
 COPY web/ ./web/
 
+# Ensure ownership of data directories if they exist or will be created
+# Note: In production, these should be volume-mounted with correct permissions.
+RUN mkdir -p /app/data && chown -R fenrir:fenrir /app
+
 # Expose the default port
 EXPOSE 8080
+
+# Run as non-root user
+USER fenrir
 
 # Run the app
 CMD ["./fenrir"]
