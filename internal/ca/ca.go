@@ -141,9 +141,13 @@ func (s *Service) RotateCAKeys(cfg *config.Config) error {
 	keyDir := cfg.KeyPath
 	// Move active to bak
 	os.Remove(filepath.Join(keyDir, "user_ca.bak"))
-	os.Rename(filepath.Join(keyDir, "user_ca"), filepath.Join(keyDir, "user_ca.bak"))
+	if err := os.Rename(filepath.Join(keyDir, "user_ca"), filepath.Join(keyDir, "user_ca.bak")); err != nil {
+		return fmt.Errorf("failed to rotate user_ca: %w", err)
+	}
 	os.Remove(filepath.Join(keyDir, "host_ca.bak"))
-	os.Rename(filepath.Join(keyDir, "host_ca"), filepath.Join(keyDir, "host_ca.bak"))
+	if err := os.Rename(filepath.Join(keyDir, "host_ca"), filepath.Join(keyDir, "host_ca.bak")); err != nil {
+		return fmt.Errorf("failed to rotate host_ca: %w", err)
+	}
 
 	// Regenerate
 	_, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY", cfg.CAPassphrase)

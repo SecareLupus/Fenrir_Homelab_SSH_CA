@@ -65,23 +65,23 @@ func (d *DB) migrate() error {
 		`CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT NOT NULL UNIQUE,
-		password_hash TEXT, -- For local auth
+		password_hash TEXT,
 		role TEXT NOT NULL DEFAULT 'user',
-		enabled INTEGER NOT NULL DEFAULT 1, -- 1=true, 0=false
+		enabled INTEGER NOT NULL DEFAULT 1,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`,
 		`CREATE TABLE IF NOT EXISTS audit_logs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER,
 		event TEXT NOT NULL,
-		metadata TEXT, -- JSON blob
+		metadata TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`,
 		`CREATE TABLE IF NOT EXISTS public_keys (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
 		fingerprint TEXT NOT NULL UNIQUE,
-		type TEXT NOT NULL, -- e.g. ssh-ed25519
+		type TEXT NOT NULL,
 		content TEXT NOT NULL,
 		comment TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -90,10 +90,10 @@ func (d *DB) migrate() error {
 		`CREATE TABLE IF NOT EXISTS certificates (
 		serial INTEGER PRIMARY KEY,
 		key_fingerprint TEXT NOT NULL,
-		type TEXT NOT NULL, -- user or host
-		principals TEXT NOT NULL, -- JSON or comma-separated
-		valid_from INTEGER NOT NULL, -- Unix timestamp
-		valid_to INTEGER NOT NULL, -- Unix timestamp
+		type TEXT NOT NULL,
+		principals TEXT NOT NULL,
+		valid_from INTEGER NOT NULL,
+		valid_to INTEGER NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`,
 		`CREATE TABLE IF NOT EXISTS revocations (
@@ -113,7 +113,7 @@ func (d *DB) migrate() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		hostname TEXT NOT NULL UNIQUE,
 		fingerprint TEXT NOT NULL,
-		api_key_hash TEXT, -- For agent-initiated renewal
+		api_key_hash TEXT,
 		last_seen DATETIME,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`,
@@ -121,7 +121,7 @@ func (d *DB) migrate() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
 		code_hash TEXT NOT NULL,
-		used INTEGER NOT NULL DEFAULT 0, -- 0=unused, 1=used
+		used INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 	);`,
@@ -129,13 +129,13 @@ func (d *DB) migrate() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE,
 		description TEXT,
-		sudo_enabled INTEGER NOT NULL DEFAULT 0, -- 1=true, 0=false
-		requires_approval INTEGER NOT NULL DEFAULT 0, -- 1=true, 0=false
+		sudo_enabled INTEGER NOT NULL DEFAULT 0,
+		requires_approval INTEGER NOT NULL DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`,
 		`CREATE TABLE IF NOT EXISTS system_secrets (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		key_type TEXT NOT NULL, -- 'session' or 'ca_kek'
+		key_type TEXT NOT NULL,
 		secret_value TEXT NOT NULL,
 		active INTEGER NOT NULL DEFAULT 1,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -164,9 +164,9 @@ func (d *DB) migrate() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT NOT NULL,
 		pubkey TEXT NOT NULL,
-		valid_principals TEXT NOT NULL, -- JSON or comma-separated
+		valid_principals TEXT NOT NULL,
 		reason TEXT,
-		status TEXT NOT NULL DEFAULT 'PENDING', -- PENDING, APPROVED, REJECTED
+		status TEXT NOT NULL DEFAULT 'PENDING',
 		approver TEXT,
 		signed_certificate TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
