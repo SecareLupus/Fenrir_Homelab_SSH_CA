@@ -27,13 +27,16 @@ func init() {
 }
 
 func setupServer(t *testing.T) *Server {
-	// 1. DB
-	d, err := db.Init(":memory:", "", "test-key")
+	// 1. DB - Use temp file instead of :memory: to avoid race detector issues
+	tmpDB := filepath.Join(t.TempDir(), "test.db")
+	d, err := db.Init(tmpDB, "", "test-key")
 	if err != nil {
 		t.Fatalf("db init: %v", err)
 	}
+	t.Cleanup(func() { d.Close() })
+
 	// Create admin for testing
-	d.CreateUser("admin", "$2a$10$hash") // Use real hash if needed, but we bypass auth in some tests
+	d.CreateUser("admin", "$2a$10$hash")
 	d.SetUserEnabled("admin", true)
 
 	// manually set role since we can't easily modify private DB access here to direct SQL?
