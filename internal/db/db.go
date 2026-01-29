@@ -61,25 +61,23 @@ func Init(path, webhookURL, encKey string) (*DB, error) {
 }
 
 func (d *DB) migrate() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS users (
+	schemas := []string{
+		`CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT NOT NULL UNIQUE,
 		password_hash TEXT, -- For local auth
 		role TEXT NOT NULL DEFAULT 'user',
 		enabled INTEGER NOT NULL DEFAULT 1, -- 1=true, 0=false
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS audit_logs (
+	);`,
+		`CREATE TABLE IF NOT EXISTS audit_logs (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER,
 		event TEXT NOT NULL,
 		metadata TEXT, -- JSON blob
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS public_keys (
+	);`,
+		`CREATE TABLE IF NOT EXISTS public_keys (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
 		fingerprint TEXT NOT NULL UNIQUE,
@@ -88,66 +86,67 @@ func (d *DB) migrate() error {
 		comment TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-	);
-
-	CREATE TABLE IF NOT EXISTS certificates (
-		serial INTEGER PRIMARY KEY, -- OpenSSH serials are u64, sqlite int is i64. careful.
+	);`,
+		`CREATE TABLE IF NOT EXISTS certificates (
+		serial INTEGER PRIMARY KEY,
 		key_fingerprint TEXT NOT NULL,
 		type TEXT NOT NULL, -- user or host
 		principals TEXT NOT NULL, -- JSON or comma-separated
 		valid_from INTEGER NOT NULL, -- Unix timestamp
 		valid_to INTEGER NOT NULL, -- Unix timestamp
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-	
-	CREATE TABLE IF NOT EXISTS revocations (
+	);`,
+		`CREATE TABLE IF NOT EXISTS revocations (
 		serial INTEGER PRIMARY KEY,
 		reason TEXT,
 		revoked_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS api_keys (
+	);`,
+		`CREATE TABLE IF NOT EXISTS api_keys (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
 		key_hash TEXT NOT NULL UNIQUE,
 		label TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-	);
-
-	CREATE TABLE IF NOT EXISTS hosts (
+	);`,
+		`CREATE TABLE IF NOT EXISTS hosts (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		hostname TEXT NOT NULL UNIQUE,
 		fingerprint TEXT NOT NULL,
 		api_key_hash TEXT, -- For agent-initiated renewal
+		last_seen DATETIME,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS mfa_backup_codes (
+	);`,
+		`CREATE TABLE IF NOT EXISTS mfa_backup_codes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
 		code_hash TEXT NOT NULL,
 		used INTEGER NOT NULL DEFAULT 0, -- 0=unused, 1=used
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-	);
-
-	CREATE TABLE IF NOT EXISTS groups (
+	);`,
+		`CREATE TABLE IF NOT EXISTS groups (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE,
 		description TEXT,
 		sudo_enabled INTEGER NOT NULL DEFAULT 0, -- 1=true, 0=false
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-
-	CREATE TABLE IF NOT EXISTS user_groups (
+	);`,
+		`CREATE TABLE IF NOT EXISTS system_secrets (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		key_type TEXT NOT NULL, -- 'session' or 'ca_kek'
+		secret_value TEXT NOT NULL,
+		active INTEGER NOT NULL DEFAULT 1,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		expires_at DATETIME
+	);`,
+		`CREATE TABLE IF NOT EXISTS user_groups (
 		user_id INTEGER NOT NULL,
 		group_id INTEGER NOT NULL,
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
 		FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
-	);
-
-	CREATE TABLE IF NOT EXISTS webauthn_credentials (
+	);`,
+		`CREATE TABLE IF NOT EXISTS webauthn_credentials (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
 		credential_id BLOB NOT NULL,
@@ -159,11 +158,13 @@ func (d *DB) migrate() error {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
 		UNIQUE(credential_id)
-	);
-	`
-	_, err := d.Exec(schema)
-	if err != nil {
-		return err
+	);`,
+	}
+
+	for _, s := range schemas {
+		if _, err := d.Exec(s); err != nil {
+			return err
+		}
 	}
 
 	// Manual migrations for existing schemas
@@ -176,6 +177,9 @@ func (d *DB) migrate() error {
 	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN api_key_hash TEXT")
 	_, _ = d.Exec("ALTER TABLE hosts ADD COLUMN last_seen DATETIME")
 	_, _ = d.Exec("ALTER TABLE groups ADD COLUMN sudo_enabled INTEGER NOT NULL DEFAULT 0")
+	if _, err := d.Exec("CREATE TABLE IF NOT EXISTS system_secrets (id INTEGER PRIMARY KEY AUTOINCREMENT, key_type TEXT NOT NULL, secret_value TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME)"); err != nil {
+		log.Printf("Migration error (system_secrets): %v", err)
+	}
 
 	return nil
 }
@@ -557,9 +561,15 @@ func (d *DB) LogEvent(userID *int, event, metadata string) {
 				payload["user_id"] = *userID
 			}
 			body, _ := json.Marshal(payload)
-			resp, err := http.Post(d.WebhookURL, "application/json", strings.NewReader(string(body)))
-			if err == nil {
-				resp.Body.Close()
+
+			client := &http.Client{Timeout: 5 * time.Second}
+			for i := 0; i < 3; i++ {
+				resp, err := client.Post(d.WebhookURL, "application/json", strings.NewReader(string(body)))
+				if err == nil {
+					resp.Body.Close()
+					return
+				}
+				time.Sleep(time.Duration(i+1) * time.Second)
 			}
 		}()
 	}
@@ -795,7 +805,87 @@ func (d *DB) GetUserGroupsByGroupName(groupName string) ([]string, error) {
 	return names, nil
 }
 
-// --- TTL Policy Management ---
+// --- Secret Rotation ---
+
+// Secret represents a system secret (like a session signing key)
+type Secret struct {
+	ID          int
+	KeyType     string
+	SecretValue string
+	Active      bool
+	CreatedAt   time.Time
+	ExpiresAt   *time.Time
+}
+
+// GetActiveSecrets returns valid secrets for a given type, ordered by newest first
+func (d *DB) GetActiveSecrets(keyType string) ([]Secret, error) {
+	query := `
+		SELECT id, key_type, secret_value, active, created_at, expires_at 
+		FROM system_secrets 
+		WHERE key_type = ? AND active = 1 AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+		ORDER BY created_at DESC
+	`
+	rows, err := d.Query(query, keyType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var secrets []Secret
+	for rows.Next() {
+		var s Secret
+		var createdAt string
+		var expiresAt sql.NullString
+		if err := rows.Scan(&s.ID, &s.KeyType, &s.SecretValue, &s.Active, &createdAt, &expiresAt); err != nil {
+			return nil, err
+		}
+		s.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		if expiresAt.Valid {
+			t, _ := time.Parse("2006-01-02 15:04:05", expiresAt.String)
+			s.ExpiresAt = &t
+		}
+		secrets = append(secrets, s)
+	}
+	return secrets, nil
+}
+
+// CreateSecret adds a new secret and optionally expires old ones of the same type
+func (d *DB) CreateSecret(keyType, value string, expireOldDays int) error {
+	tx, err := d.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Mark existing secrets of this type to expire
+	if expireOldDays > 0 {
+		_, err = tx.Exec(`
+			UPDATE system_secrets 
+			SET expires_at = DATETIME('now', '+' || ? || ' days')
+			WHERE key_type = ? AND active = 1 AND expires_at IS NULL
+		`, expireOldDays, keyType)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 2. Insert new secret
+	_, err = tx.Exec("INSERT INTO system_secrets (key_type, secret_value) VALUES (?, ?)", keyType, value)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// CleanupExpiredSecrets removes secrets that are past their expiration date or marked inactive
+func (d *DB) CleanupExpiredSecrets() (int64, error) {
+	res, err := d.Exec("DELETE FROM system_secrets WHERE active = 0 OR (expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP)")
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
 
 // SetUserMaxTTL sets the maximum allow TTL for a user
 func (d *DB) SetUserMaxTTL(username string, ttl int) error {

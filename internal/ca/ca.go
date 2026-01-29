@@ -39,7 +39,7 @@ type Service struct {
 	hostSigners []ssh.Signer
 }
 
-// GetUserCAPublicKey returns the public key for the primary user-signing CA.
+// GetUserCAPublicKey returns the primary user-signing CA public key.
 func (s *Service) GetUserCAPublicKey() ssh.PublicKey {
 	if len(s.userSigners) == 0 {
 		return nil
@@ -47,12 +47,30 @@ func (s *Service) GetUserCAPublicKey() ssh.PublicKey {
 	return s.userSigners[0].PublicKey()
 }
 
-// GetHostCAPublicKey returns the public key for the primary host-signing CA.
+// GetHostCAPublicKey returns the primary host-signing CA public key.
 func (s *Service) GetHostCAPublicKey() ssh.PublicKey {
 	if len(s.hostSigners) == 0 {
 		return nil
 	}
 	return s.hostSigners[0].PublicKey()
+}
+
+// GetUserCAPublicBundle returns all current user-signing CA public keys (active + rollover)
+func (s *Service) GetUserCAPublicBundle() []ssh.PublicKey {
+	var keys []ssh.PublicKey
+	for _, signer := range s.userSigners {
+		keys = append(keys, signer.PublicKey())
+	}
+	return keys
+}
+
+// GetHostCAPublicBundle returns all current host-signing CA public keys (active + rollover)
+func (s *Service) GetHostCAPublicBundle() []ssh.PublicKey {
+	var keys []ssh.PublicKey
+	for _, signer := range s.hostSigners {
+		keys = append(keys, signer.PublicKey())
+	}
+	return keys
 }
 
 // New initializes a CA service. It loads software-based keys from the
@@ -65,18 +83,8 @@ func New(cfg *config.Config) (*Service, error) {
 
 	s := &Service{}
 
-	// 1. Load Software Keys (Fallback)
-	userSigner, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY", cfg.CAPassphrase)
-	if err != nil {
-		return nil, fmt.Errorf("user ca key: %w", err)
-	}
-	s.userSigners = append(s.userSigners, userSigner)
-
-	hostSigner, err := loadOrGenKey(filepath.Join(keyDir, "host_ca"), "SSH CA HOST KEY", cfg.CAPassphrase)
-	if err != nil {
-		return nil, fmt.Errorf("host ca key: %w", err)
-	}
-	s.hostSigners = append(s.hostSigners, hostSigner)
+	// 1. Load Software Keys (Active + Backup)
+	s.loadSoftwareKeys(cfg)
 
 	// 2. Load PKCS#11 Keys (Preferred)
 	if cfg.PKCS11.Enabled {
@@ -93,6 +101,65 @@ func New(cfg *config.Config) (*Service, error) {
 	}
 
 	return s, nil
+}
+
+func (s *Service) loadSoftwareKeys(cfg *config.Config) {
+	keyDir := cfg.KeyPath
+	// Primary
+	if u, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY", cfg.CAPassphrase); err == nil {
+		s.userSigners = append(s.userSigners, u)
+	}
+	if h, err := loadOrGenKey(filepath.Join(keyDir, "host_ca"), "SSH CA HOST KEY", cfg.CAPassphrase); err == nil {
+		s.hostSigners = append(s.hostSigners, h)
+	}
+	// Rollover (Backup) - Only load if they exist
+	if info, err := os.Stat(filepath.Join(keyDir, "user_ca.bak")); err == nil && !info.IsDir() {
+		if u, err := loadOrGenKey(filepath.Join(keyDir, "user_ca.bak"), "SSH CA USER KEY", cfg.CAPassphrase); err == nil {
+			s.userSigners = append(s.userSigners, u)
+		}
+	}
+	if info, err := os.Stat(filepath.Join(keyDir, "host_ca.bak")); err == nil && !info.IsDir() {
+		if h, err := loadOrGenKey(filepath.Join(keyDir, "host_ca.bak"), "SSH CA HOST KEY", cfg.CAPassphrase); err == nil {
+			s.hostSigners = append(s.hostSigners, h)
+		}
+	}
+}
+
+func loadSigner(path, passphrase string) (ssh.Signer, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if passphrase != "" {
+		return ssh.ParsePrivateKeyWithPassphrase(content, []byte(passphrase))
+	}
+	return ssh.ParsePrivateKey(content)
+}
+
+// RotateCAKeys triggers a key rotation. Current keys are moved to .bak and new ones generated.
+func (s *Service) RotateCAKeys(cfg *config.Config) error {
+	keyDir := cfg.KeyPath
+	// Move active to bak
+	os.Remove(filepath.Join(keyDir, "user_ca.bak"))
+	os.Rename(filepath.Join(keyDir, "user_ca"), filepath.Join(keyDir, "user_ca.bak"))
+	os.Remove(filepath.Join(keyDir, "host_ca.bak"))
+	os.Rename(filepath.Join(keyDir, "host_ca"), filepath.Join(keyDir, "host_ca.bak"))
+
+	// Regenerate
+	_, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY", cfg.CAPassphrase)
+	if err != nil {
+		return err
+	}
+	_, err = loadOrGenKey(filepath.Join(keyDir, "host_ca"), "SSH CA HOST KEY", cfg.CAPassphrase)
+	if err != nil {
+		return err
+	}
+
+	// Reload signers
+	s.userSigners = nil
+	s.hostSigners = nil
+	s.loadSoftwareKeys(cfg)
+	return nil
 }
 
 func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {

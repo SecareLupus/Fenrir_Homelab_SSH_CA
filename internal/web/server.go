@@ -76,8 +76,10 @@ type Server struct {
 	webauthnSessions   map[string]*webauthn.SessionData
 	webauthnSessionsMu sync.Mutex
 
-	sessionSecret []byte
-	rateLimiter   *rateLimiter
+	sessionSecrets   []db.Secret
+	sessionSecretsMu sync.RWMutex
+	systemSalt       []byte
+	rateLimiter      *rateLimiter
 }
 
 type challenge struct {
@@ -109,22 +111,8 @@ func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 		webauthnSessions: make(map[string]*webauthn.SessionData),
 		rateLimiter:      newRateLimiter(),
 	}
-	if len(cfg.SessionSecret) > 0 {
-		s.sessionSecret = []byte(cfg.SessionSecret)
-	} else if len(cfg.DBEncryptionKey) > 0 {
-		s.sessionSecret = []byte(cfg.DBEncryptionKey)
-	} else {
-		if cfg.Production {
-			log.Fatalf("FATAL: SESSION_SECRET must be set in production mode")
-		}
-		secret := make([]byte, 32)
-		if _, err := rand.Read(secret); err != nil {
-			log.Fatalf("failed to generate session secret: %v", err)
-		} else {
-			s.sessionSecret = secret
-			log.Printf("WARNING: SESSION_SECRET not set; using ephemeral in-memory secret. Sessions will be invalidated on restart.")
-		}
-	}
+	// Session secret initialization is now handled by syncSessionSecrets called in NewServer.
+	// If the DB is empty (first run), syncSessionSecrets will attempt to migrate the config secret or generate a new one.
 	if cfg.OIDC.Enabled {
 		provider, err := oidc.NewProvider(context.Background(), cfg.OIDC.IssuerURL)
 		if err != nil {
@@ -153,7 +141,9 @@ func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 	}
 
 	s.loadTemplates()
+	s.syncSessionSecrets()
 	s.routes()
+	go s.startBackgroundWorkers()
 	return s
 }
 
@@ -164,6 +154,123 @@ func (s *Server) loadTemplates() {
 		log.Fatalf("failed to parse templates: %v", err)
 	}
 	s.tmpl = tmpl
+}
+
+func (s *Server) syncSessionSecrets() {
+	secrets, err := s.db.GetActiveSecrets("session")
+	if err != nil {
+		log.Printf("ERROR: failed to sync session secrets: %v", err)
+		return
+	}
+
+	if len(secrets) == 0 {
+		// Bootstrap session secrets
+		s.bootstrapSecret("session")
+		secrets, _ = s.db.GetActiveSecrets("session")
+	}
+
+	s.sessionSecretsMu.Lock()
+	s.sessionSecrets = secrets
+	s.sessionSecretsMu.Unlock()
+
+	// Sync system salt (stable)
+	salts, _ := s.db.GetActiveSecrets("system_salt")
+	if len(salts) == 0 {
+		s.bootstrapSecret("system_salt")
+		salts, _ = s.db.GetActiveSecrets("system_salt")
+	}
+	s.systemSalt = []byte(salts[0].SecretValue)
+}
+
+func (s *Server) bootstrapSecret(keyType string) {
+	var secretVal string
+	if keyType == "session" && len(s.cfg.SessionSecret) > 0 {
+		secretVal = s.cfg.SessionSecret
+	} else if keyType == "system_salt" && len(s.cfg.DBEncryptionKey) > 0 {
+		secretVal = s.cfg.DBEncryptionKey
+	} else {
+		buf := make([]byte, 32)
+		rand.Read(buf)
+		secretVal = base64.RawURLEncoding.EncodeToString(buf)
+	}
+	s.db.CreateSecret(keyType, secretVal, 0)
+}
+
+func (s *Server) startBackgroundWorkers() {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+
+	// Initial cleanup
+	s.db.CleanupExpiredSecrets()
+
+	for range ticker.C {
+		// 1. Session Rotation (every 30 days)
+		s.rotateSessionSecretIfNeeded()
+
+		// 2. CA Rotation (every 180 days)
+		s.rotateCAIfNeeded()
+
+		// 3. Secret Cleanup
+		s.db.CleanupExpiredSecrets()
+
+		// 4. Sync local cache
+		s.syncSessionSecrets()
+	}
+}
+
+func (s *Server) rotateCAIfNeeded() {
+	// For Tier 1 (Software), we rotate every 180 days.
+	// Hardware keys (PKCS#11) are NOT rotated automatically.
+	if s.cfg.PKCS11.Enabled {
+		return
+	}
+
+	meta, err := s.db.GetActiveSecrets("ca_rotation_meta")
+	if err != nil {
+		return
+	}
+
+	rotate := false
+	if len(meta) == 0 {
+		// Bootstrap metadata
+		s.db.CreateSecret("ca_rotation_meta", "initial", 0)
+		rotate = false // Don't rotate immediately on first run
+	} else if time.Since(meta[0].CreatedAt) > 180*24*time.Hour {
+		rotate = true
+	}
+
+	if rotate {
+		log.Printf("Automated CA Key Rotation starting...")
+		if err := s.ca.RotateCAKeys(s.cfg); err != nil {
+			log.Printf("ERROR: CA rotation failed: %v", err)
+			return
+		}
+		// Log event and update meta
+		uid, _ := s.db.GetUserID("admin") // Use admin or system
+		s.db.LogEvent(&uid, "ca_rotation", "Automated intermediate rotation triggered")
+		s.db.CreateSecret("ca_rotation_meta", "rotated", 0)
+		log.Printf("Automated CA Key Rotation completed successfully")
+	}
+}
+
+func (s *Server) rotateSessionSecretIfNeeded() {
+	s.sessionSecretsMu.RLock()
+	if len(s.sessionSecrets) == 0 {
+		s.sessionSecretsMu.RUnlock()
+		return
+	}
+	latest := s.sessionSecrets[0]
+	s.sessionSecretsMu.RUnlock()
+
+	// Rotate if older than 30 days
+	if time.Since(latest.CreatedAt) > 30*24*time.Hour {
+		log.Printf("Rotating session secret (Created at: %v)", latest.CreatedAt)
+		buf := make([]byte, 32)
+		rand.Read(buf)
+		newSecret := base64.RawURLEncoding.EncodeToString(buf)
+		// Expire old ones in 1 day (grace period)
+		s.db.CreateSecret("session", newSecret, 1)
+	}
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
@@ -343,7 +450,13 @@ func randomToken(size int) (string, error) {
 
 func (s *Server) signValue(payload []byte) string {
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
-	mac := hmac.New(sha256.New, s.sessionSecret)
+
+	s.sessionSecretsMu.RLock()
+	// Always sign with the newest active secret
+	secret := []byte(s.sessionSecrets[0].SecretValue)
+	s.sessionSecretsMu.RUnlock()
+
+	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(payloadB64))
 	sig := mac.Sum(nil)
 	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
@@ -367,13 +480,20 @@ func (s *Server) verifyValue(value string) ([]byte, bool) {
 		return nil, false
 	}
 
-	mac := hmac.New(sha256.New, s.sessionSecret)
-	mac.Write([]byte(payloadB64))
-	expected := mac.Sum(nil)
-	if !hmac.Equal(sig, expected) {
-		return nil, false
+	s.sessionSecretsMu.RLock()
+	defer s.sessionSecretsMu.RUnlock()
+
+	// Try all active secrets (rollover support)
+	for _, sct := range s.sessionSecrets {
+		mac := hmac.New(sha256.New, []byte(sct.SecretValue))
+		mac.Write([]byte(payloadB64))
+		expected := mac.Sum(nil)
+		if hmac.Equal(sig, expected) {
+			return payload, true
+		}
 	}
-	return payload, true
+
+	return nil, false
 }
 
 func (s *Server) signJSON(value any) (string, error) {
@@ -460,7 +580,7 @@ func (s *Server) csrfToken(r *http.Request) string {
 func (s *Server) requireCSRF(w http.ResponseWriter, r *http.Request) bool {
 	// Allow bypassing CSRF if a valid API Key is provided
 	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
-		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
+		hash := auth.HashAPIKey(apiKey, s.systemSalt)
 		_, err := s.db.GetUserByAPIKey(hash)
 		if err == nil {
 			return true
@@ -637,7 +757,7 @@ func (s *Server) authenticate(r *http.Request) string {
 	// 1. Check for API Key in header
 	apiKey := r.Header.Get("X-API-Key")
 	if apiKey != "" {
-		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
+		hash := auth.HashAPIKey(apiKey, s.systemSalt)
 		username, err := s.db.GetUserByAPIKey(hash)
 		if err == nil {
 			return username
@@ -913,7 +1033,7 @@ func (s *Server) handleAPIKeyGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiKey := hex.EncodeToString(rawKey)
-	hash := auth.HashAPIKey(apiKey, s.sessionSecret)
+	hash := auth.HashAPIKey(apiKey, s.systemSalt)
 
 	if err := s.db.CreateAPIKey(userId, hash, "Default Key"); err != nil {
 		log.Printf("Error storing API key: %v", err)
@@ -979,7 +1099,7 @@ func (s *Server) handleAPIAuthLogin(w http.ResponseWriter, r *http.Request) {
 		totp := gotp.NewDefaultTOTP(mfaSecret)
 		if !totp.Verify(req.TOTPCode, time.Now().Unix()) {
 			// Check backup codes
-			hash := auth.HashAPIKey(req.TOTPCode, s.sessionSecret) // Using same hash as API keys
+			hash := auth.HashAPIKey(req.TOTPCode, s.systemSalt) // Using same hash as API keys
 			valid, _ := s.db.VerifyBackupCode(req.Username, hash)
 			if !valid {
 				http.Error(w, "Invalid MFA code", 401)
@@ -1001,7 +1121,7 @@ func (s *Server) handleAPIAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiKey := hex.EncodeToString(rawKey)
-	keyHash := auth.HashAPIKey(apiKey, s.sessionSecret)
+	keyHash := auth.HashAPIKey(apiKey, s.systemSalt)
 
 	if err := s.db.CreateAPIKey(userId, keyHash, "CLI Generated Key"); err != nil {
 		log.Printf("Error storing API key: %v", err)
@@ -1269,7 +1389,7 @@ func (s *Server) handleAdminHostAPIKey(w http.ResponseWriter, r *http.Request) {
 	rand.Read(key)
 	apiKey := base64.StdEncoding.EncodeToString(key)
 
-	hash := auth.HashAPIKey(apiKey, s.sessionSecret)
+	hash := auth.HashAPIKey(apiKey, s.systemSalt)
 	if err := s.db.SetHostAPIKey(hostname, hash); err != nil {
 		http.Error(w, "Failed to save API key", 500)
 		return
@@ -1567,7 +1687,7 @@ func (s *Server) handleLoginMFA(w http.ResponseWriter, r *http.Request) {
 
 	// If TOTP fails, check backup codes
 	if !valid {
-		hash := auth.HashAPIKey(code, s.sessionSecret) // Using same hash as API keys
+		hash := auth.HashAPIKey(code, s.systemSalt) // Using same hash as API keys
 		var err error
 		valid, err = s.db.VerifyBackupCode(username, hash)
 		if err != nil {
@@ -1656,7 +1776,7 @@ func (s *Server) generateBackupCodes(username string) ([]string, error) {
 		}
 		plain := hex.EncodeToString(code)
 		plainCodes = append(plainCodes, plain)
-		hashedCodes = append(hashedCodes, auth.HashAPIKey(plain, s.sessionSecret))
+		hashedCodes = append(hashedCodes, auth.HashAPIKey(plain, s.systemSalt))
 	}
 	err := s.db.SetBackupCodes(username, hashedCodes)
 	return plainCodes, err
@@ -1667,7 +1787,10 @@ func (s *Server) handleAPIUserCA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
-	w.Write(ssh.MarshalAuthorizedKey(s.ca.GetUserCAPublicKey()))
+	bundle := s.ca.GetUserCAPublicBundle()
+	for _, key := range bundle {
+		w.Write(ssh.MarshalAuthorizedKey(key))
+	}
 }
 
 func (s *Server) handleAPIHostCA(w http.ResponseWriter, r *http.Request) {
@@ -1675,7 +1798,10 @@ func (s *Server) handleAPIHostCA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
-	w.Write(ssh.MarshalAuthorizedKey(s.ca.GetHostCAPublicKey()))
+	bundle := s.ca.GetHostCAPublicBundle()
+	for _, key := range bundle {
+		w.Write(ssh.MarshalAuthorizedKey(key))
+	}
 }
 
 // handleAPIPAMBinary serves the pam_fenrir.so binary.
@@ -1773,7 +1899,7 @@ func (s *Server) handleAPIHostRenew(w http.ResponseWriter, r *http.Request) {
 	var hostname string
 
 	if apiKey != "" {
-		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
+		hash := auth.HashAPIKey(apiKey, s.systemSalt)
 		hostname, err = s.db.GetHostByAPIKey(hash)
 		if err != nil {
 			http.Error(w, "Unauthorized (Invalid API Key)", 401)
@@ -1866,7 +1992,7 @@ func (s *Server) checkHardenedAuth(w http.ResponseWriter, r *http.Request) bool 
 
 	// 1. Check for Host API Key
 	if apiKey := r.Header.Get("X-Host-API-Key"); apiKey != "" {
-		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
+		hash := auth.HashAPIKey(apiKey, s.systemSalt)
 		_, err := s.db.GetHostByAPIKey(hash)
 		if err == nil {
 			return true
@@ -1875,7 +2001,7 @@ func (s *Server) checkHardenedAuth(w http.ResponseWriter, r *http.Request) bool 
 
 	// 2. Check for User API Key
 	if apiKey := r.Header.Get("X-API-Key"); apiKey != "" {
-		hash := auth.HashAPIKey(apiKey, s.sessionSecret)
+		hash := auth.HashAPIKey(apiKey, s.systemSalt)
 		_, err := s.db.GetUserByAPIKey(hash)
 		if err == nil {
 			return true

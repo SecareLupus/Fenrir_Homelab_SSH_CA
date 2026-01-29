@@ -75,10 +75,10 @@
 
 ## Phase 15: Enterprise Reliability
 
-- [ ] **Secret Rotation**: Implement a workflow for rotating session secrets and CA passphrases.
+- [x] **Secret Rotation**: Implement a workflow for rotating session secrets and CA passphrases.
 - [ ] **Approval Workflows**: Optional request/approval flow for sensitive certificates.
-- [ ] **Key Rotation**: Infrastructure for rotating the CA root/intermediate keys.
-- [ ] **Webhook Hardening**: Add timeouts and retry logic to prevent DB-level hangs during external calls.
+- [x] **Key Rotation**: Infrastructure for rotating the CA root/intermediate keys.
+- [x] **Webhook Hardening**: Add timeouts and retry logic to prevent DB-level hangs.
 - [ ] **Hardware HSM Sync**: Enhanced PKCS#11 monitoring and logging.
 
 ## Phase 16: Advanced Security & Compliance
