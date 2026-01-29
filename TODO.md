@@ -58,7 +58,7 @@
 
 ## Phase 14: Quality & Observability
 
-- [ ] **CI/CD Integration**: Automate unit and E2E tests on pull requests.
+- [x] **CI/CD Integration**: Automate unit and E2E tests on pull requests.
 - [x] **Increase Test Coverage**: Target ≥70% unit test coverage for core packages (Auth/CA/DB).
 - [x] **Code Documentation**: Add doc comments to all public functions and types for better Godoc support.
 - [x] **Architecture Documentation**: Create high-level design docs for the three-tier deployment model.
