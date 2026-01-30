@@ -219,8 +219,9 @@ jobs:
         shell: cmd
         run: |
           if not exist dist mkdir dist
-          "%WIX%bin\candle.exe" build/windows/installer.wxs -out dist/installer.wixobj
-          "%WIX%bin\light.exe" dist/installer.wixobj -out dist/tyr-setup.msi -ext WixUIExtension
+          dir build\windows
+          "%WIX%bin\candle.exe" build\windows\installer.wxs -out dist\installer.wixobj
+          "%WIX%bin\light.exe" dist\installer.wixobj -out dist\tyr-setup.msi -ext WixUIExtension
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
