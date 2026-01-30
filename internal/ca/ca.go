@@ -105,24 +105,89 @@ func New(cfg *config.Config) (*Service, error) {
 
 func (s *Service) loadSoftwareKeys(cfg *config.Config) {
 	keyDir := cfg.KeyPath
-	// Primary
-	if u, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY", cfg.CAPassphrase); err == nil {
-		s.userSigners = append(s.userSigners, u)
+
+	userPath := filepath.Join(keyDir, "user_ca")
+	hostPath := filepath.Join(keyDir, "host_ca")
+	userBak := userPath + ".bak"
+	hostBak := hostPath + ".bak"
+
+	// 1. Detect and recover from partial rotation
+	userExists := fileExists(userPath)
+	hostExists := fileExists(hostPath)
+	userBakExists := fileExists(userBak)
+	hostBakExists := fileExists(hostBak)
+
+	if !userExists && userBakExists {
+		log.Printf("Partial rotation detected for user_ca, recovering from .bak...")
+		if err := os.Rename(userBak, userPath); err != nil {
+			log.Printf("Warning: failed to recover user_ca: %v", err)
+		} else {
+			userExists = true
+			userBakExists = false
+		}
 	}
-	if h, err := loadOrGenKey(filepath.Join(keyDir, "host_ca"), "SSH CA HOST KEY", cfg.CAPassphrase); err == nil {
-		s.hostSigners = append(s.hostSigners, h)
+	if !hostExists && hostBakExists {
+		log.Printf("Partial rotation detected for host_ca, recovering from .bak...")
+		if err := os.Rename(hostBak, hostPath); err != nil {
+			log.Printf("Warning: failed to recover host_ca: %v", err)
+		} else {
+			hostExists = true
+			hostBakExists = false
+		}
 	}
-	// Rollover (Backup) - Only load if they exist
-	if info, err := os.Stat(filepath.Join(keyDir, "user_ca.bak")); err == nil && !info.IsDir() {
-		if u, err := loadOrGenKey(filepath.Join(keyDir, "user_ca.bak"), "SSH CA USER KEY", cfg.CAPassphrase); err == nil {
+
+	// 2. Handle initial setup if both are missing
+	if !userExists && !hostExists && !userBakExists && !hostBakExists {
+		log.Printf("No CA keys found, generating new ones...")
+		if _, err := GenerateCAKey(userPath, cfg.CAPassphrase); err != nil {
+			log.Printf("Failed to generate user CA: %v", err)
+		} else {
+			userExists = true
+		}
+		if _, err := GenerateCAKey(hostPath, cfg.CAPassphrase); err != nil {
+			log.Printf("Failed to generate host CA: %v", err)
+		} else {
+			hostExists = true
+		}
+	}
+
+	// 3. Load Primary
+	if userExists {
+		if u, err := loadKey(userPath, cfg.CAPassphrase); err == nil {
+			s.userSigners = append(s.userSigners, u)
+		} else {
+			log.Printf("Error loading primary user_ca: %v", err)
+		}
+	} else {
+		log.Printf("Warning: primary user_ca missing")
+	}
+
+	if hostExists {
+		if h, err := loadKey(hostPath, cfg.CAPassphrase); err == nil {
+			s.hostSigners = append(s.hostSigners, h)
+		} else {
+			log.Printf("Error loading primary host_ca: %v", err)
+		}
+	} else {
+		log.Printf("Warning: primary host_ca missing")
+	}
+
+	// 4. Load Rollover (Backup) - Only load if they exist
+	if userBakExists {
+		if u, err := loadKey(userBak, cfg.CAPassphrase); err == nil {
 			s.userSigners = append(s.userSigners, u)
 		}
 	}
-	if info, err := os.Stat(filepath.Join(keyDir, "host_ca.bak")); err == nil && !info.IsDir() {
-		if h, err := loadOrGenKey(filepath.Join(keyDir, "host_ca.bak"), "SSH CA HOST KEY", cfg.CAPassphrase); err == nil {
+	if hostBakExists {
+		if h, err := loadKey(hostBak, cfg.CAPassphrase); err == nil {
 			s.hostSigners = append(s.hostSigners, h)
 		}
 	}
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func loadSigner(path, passphrase string) (ssh.Signer, error) {
@@ -139,70 +204,96 @@ func loadSigner(path, passphrase string) (ssh.Signer, error) {
 // RotateCAKeys triggers a key rotation. Current keys are moved to .bak and new ones generated.
 func (s *Service) RotateCAKeys(cfg *config.Config) error {
 	keyDir := cfg.KeyPath
-	// Move active to bak
-	os.Remove(filepath.Join(keyDir, "user_ca.bak"))
-	if err := os.Rename(filepath.Join(keyDir, "user_ca"), filepath.Join(keyDir, "user_ca.bak")); err != nil {
-		return fmt.Errorf("failed to rotate user_ca: %w", err)
-	}
-	os.Remove(filepath.Join(keyDir, "host_ca.bak"))
-	if err := os.Rename(filepath.Join(keyDir, "host_ca"), filepath.Join(keyDir, "host_ca.bak")); err != nil {
-		return fmt.Errorf("failed to rotate host_ca: %w", err)
+	userPath := filepath.Join(keyDir, "user_ca")
+	hostPath := filepath.Join(keyDir, "host_ca")
+	userBak := userPath + ".bak"
+	hostBak := hostPath + ".bak"
+	userTmp := userPath + ".tmp"
+	hostTmp := hostPath + ".tmp"
+
+	// 1. Pre-check: Ensure current keys exist
+	if !fileExists(userPath) || !fileExists(hostPath) {
+		return fmt.Errorf("rotation failed: primary CA keys are missing")
 	}
 
-	// Regenerate
-	_, err := loadOrGenKey(filepath.Join(keyDir, "user_ca"), "SSH CA USER KEY", cfg.CAPassphrase)
-	if err != nil {
-		return err
+	// 2. Generate NEW keys into .tmp files first (Atomic preparation)
+	log.Printf("Generating new CA keys for rotation...")
+	if _, err := GenerateCAKey(userTmp, cfg.CAPassphrase); err != nil {
+		return fmt.Errorf("failed to generate new user CA: %w", err)
 	}
-	_, err = loadOrGenKey(filepath.Join(keyDir, "host_ca"), "SSH CA HOST KEY", cfg.CAPassphrase)
-	if err != nil {
-		return err
+	if _, err := GenerateCAKey(hostTmp, cfg.CAPassphrase); err != nil {
+		os.Remove(userTmp)
+		os.Remove(userTmp + ".pub")
+		return fmt.Errorf("failed to generate new host CA: %w", err)
 	}
 
-	// Reload signers
+	// 3. Perform rotation (renames)
+	// We move current to .bak, then .tmp to current.
+	// We remove old .bak first.
+	os.Remove(userBak)
+	os.Remove(hostBak)
+
+	log.Printf("Finalizing rotation sequence...")
+	if err := os.Rename(userPath, userBak); err != nil {
+		return fmt.Errorf("failed to move user_ca to bak: %w", err)
+	}
+	if err := os.Rename(hostPath, hostBak); err != nil {
+		// Recovery attempt: move user_ca back if host_ca fails
+		_ = os.Rename(userBak, userPath)
+		return fmt.Errorf("failed to move host_ca to bak: %w", err)
+	}
+
+	// Now move .tmp to active
+	if err := os.Rename(userTmp, userPath); err != nil {
+		return fmt.Errorf("critical: failed to activate new user_ca (it exists as .tmp): %w", err)
+	}
+	if err := os.Rename(hostTmp, hostPath); err != nil {
+		return fmt.Errorf("critical: failed to activate new host_ca (it exists as .tmp): %w", err)
+	}
+
+	// 4. Reload signers
 	s.userSigners = nil
 	s.hostSigners = nil
 	s.loadSoftwareKeys(cfg)
 	return nil
 }
 
-func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
-	// 1. Try to load
+func loadKey(path, passphrase string) (ssh.Signer, error) {
 	content, err := os.ReadFile(path)
-	if err == nil {
-		block, _ := pem.Decode(content)
-		if block != nil && (block.Type == "ENCRYPTED PRIVATE KEY" || block.Type == "ENCRYPTED FENRIR KEY") {
-			if passphrase == "" {
-				return nil, fmt.Errorf("passphrase required for encrypted key")
-			}
-			var decrypted []byte
-			if block.Type == "ENCRYPTED PRIVATE KEY" {
-				// Backward compatibility for deprecated x509 encryption
-				decrypted, err = x509.DecryptPEMBlock(block, []byte(passphrase))
-			} else {
-				// Modern AES-GCM encryption
-				decrypted, err = decryptKey(block, passphrase)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("decrypt key: %w", err)
-			}
-			// Parse the decrypted PKCS#8 bytes
-			privPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: decrypted})
-			defer auth.Zero(decrypted)
-			return ssh.ParsePrivateKey(privPEM)
-		}
-
-		// Fallback to standard parsing
-		if passphrase != "" {
-			return ssh.ParsePrivateKeyWithPassphrase(content, []byte(passphrase))
-		}
-		return ssh.ParsePrivateKey(content)
+	if err != nil {
+		return nil, err
 	}
-	if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("read key: %w", err)
+	block, _ := pem.Decode(content)
+	if block != nil && (block.Type == "ENCRYPTED PRIVATE KEY" || block.Type == "ENCRYPTED FENRIR KEY") {
+		if passphrase == "" {
+			return nil, fmt.Errorf("passphrase required for encrypted key")
+		}
+		var decrypted []byte
+		if block.Type == "ENCRYPTED PRIVATE KEY" {
+			// Backward compatibility for deprecated x509 encryption
+			decrypted, err = x509.DecryptPEMBlock(block, []byte(passphrase))
+		} else {
+			// Modern AES-GCM encryption
+			decrypted, err = decryptKey(block, passphrase)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("decrypt key: %w", err)
+		}
+		// Parse the decrypted PKCS#8 bytes
+		privPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: decrypted})
+		defer auth.Zero(decrypted)
+		return ssh.ParsePrivateKey(privPEM)
 	}
 
-	// 2. Generate new ED25519 key
+	// Fallback to standard parsing
+	if passphrase != "" {
+		return ssh.ParsePrivateKeyWithPassphrase(content, []byte(passphrase))
+	}
+	return ssh.ParsePrivateKey(content)
+}
+
+func GenerateCAKey(path, passphrase string) (ssh.Signer, error) {
+	// Generate new ED25519 key
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("generate key: %w", err)
@@ -222,18 +313,18 @@ func loadOrGenKey(path, headers, passphrase string) (ssh.Signer, error) {
 		}
 	} else {
 		block, err = ssh.MarshalPrivateKey(priv, "")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("marshal private key: %w", err)
+		if err != nil {
+			return nil, fmt.Errorf("marshal private key: %w", err)
+		}
 	}
 
-	// 4. Save to disk
+	// Save to disk
 	pemBytes := pem.EncodeToMemory(block)
 	if err := os.WriteFile(path, pemBytes, 0600); err != nil {
 		return nil, fmt.Errorf("write key: %w", err)
 	}
 
-	// 5. Also save public key for convenience
+	// Also save public key for convenience
 	sshPub, err := ssh.NewPublicKey(priv.Public())
 	if err == nil {
 		_ = os.WriteFile(path+".pub", ssh.MarshalAuthorizedKey(sshPub), 0644)
