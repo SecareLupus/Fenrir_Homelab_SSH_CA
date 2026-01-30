@@ -33,7 +33,7 @@ for platform in "${platforms[@]}"; do
 
     echo "Building $OUTPUT_NAME..."
     # Build CLI
-    GOOS=$GOOS GOARCH=$GOARCH go build -o "$BIN_DIR/$OUTPUT_NAME" ./cmd/client
+    GOOS=$GOOS GOARCH=$GOARCH go build -o "$BIN_DIR/$OUTPUT_NAME" ./cmd/tyr
     
     # Build GUI (might fail on some cross-builds DUE TO CGO, but we'll try)
     GUI_NAME="tyr-gui-$GOOS-$GOARCH"
@@ -51,7 +51,7 @@ for platform in "${platforms[@]}"; do
     fi
 
     echo "Building $GUI_NAME (CGO_ENABLED=1)..."
-    env $CC_OVERRIDE CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH go build -o "$BIN_DIR/$GUI_NAME" ./cmd/client-gui || \
+    env $CC_OVERRIDE CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH go build -o "$BIN_DIR/$GUI_NAME" ./cmd/tyr-gui || \
         echo "Warning: GUI build failed for $platform. Use deploy/builder.Dockerfile for a full cross-build environment."
 done
 

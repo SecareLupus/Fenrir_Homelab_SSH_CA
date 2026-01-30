@@ -46,7 +46,8 @@ var globalConfig *client.Config
 var serverPort = 4500
 var configPath string
 var wv webview.WebView
-var windowVisible bool = true
+var windowVisible bool = false
+var showWindowChan = make(chan string, 1)
 
 // SSE support
 type sseClient chan string
@@ -67,6 +68,11 @@ type PersistentConfig struct {
 const keychainService = "fenrir-ssh-ca"
 const keychainUser = "tyr"
 
+func init() {
+	// 0. Ensure GTK runs on the main OS thread
+	runtime.LockOSThread()
+}
+
 func main() {
 	// Determine config file path
 	home, _ := os.UserHomeDir()
@@ -85,44 +91,55 @@ func main() {
 		}
 	}
 
-	// 1. Start SSE Manager
+	// 1. Start auxiliary services early
 	go sseManager()
-
-	// 2. Start Renewal Loop
 	go renewalLoop()
-
-	// 2. Start HTTP Server
 	go startServer()
-
-	// 3. Sync SSH Config
 	go syncSSHConfig()
-
-	// 4. Start System Tray
-	go systray.Run(onReady, onExit)
-
-	// 5. Start Global Hotkey
 	go startHotkeyListener()
 
-	// 6. Start Native Window
-	startNativeWindow()
-}
+	// 2. Initial window signal
+	showWindowChan <- fmt.Sprintf("http://localhost:%d", serverPort)
 
-func startNativeWindow() {
-	wv = webview.New(true)
-	defer wv.Destroy()
-	wv.SetTitle("Fenrir SSH CA Control Center")
-	wv.SetSize(720, 520, webview.HintNone)
-	wv.Navigate(fmt.Sprintf("http://localhost:%d", serverPort))
-	wv.Run()
+	// 3. Persistent Loop for WebUI (Main Thread)
+	firstRun := true
+	for {
+		targetURL := <-showWindowChan
+		if targetURL == "" {
+			continue
+		}
+
+		// Initialize WebUI
+		wv = webview.New(true)
+		wv.SetTitle("Fenrir SSH CA Control Center")
+		wv.SetSize(720, 520, webview.HintNone)
+		wv.Navigate(targetURL)
+
+		if firstRun {
+			// Start System Tray once GTK is initialized by Webview
+			go systray.Run(onReady, onExit)
+			firstRun = false
+		}
+
+		windowVisible = true
+		wv.Run()
+		wv.Destroy()
+		wv = nil
+		windowVisible = false
+
+		// After wv.Run() exits (window closed), the loop waits for showWindowChan again.
+		// This keeps the process alive and allows the tray to stay responsive.
+		log.Println("Window closed, staying alive in tray...")
+	}
 }
 
 func toggleWindow() {
 	if windowVisible {
-		wv.Terminate() // This is a limitation of webview_go; we might need to recreate it
-		windowVisible = false
+		wv.Dispatch(func() {
+			wv.Terminate()
+		})
 	} else {
-		go startNativeWindow()
-		windowVisible = true
+		showWindowChan <- fmt.Sprintf("http://localhost:%d", serverPort)
 	}
 }
 
@@ -254,13 +271,11 @@ func onReady() {
 			toggleWindow()
 		case <-mSettings.ClickedCh:
 			if !windowVisible {
-				go func() {
-					startNativeWindow()
-					wv.Navigate(fmt.Sprintf("http://localhost:%d/settings", serverPort))
-				}()
-				windowVisible = true
+				showWindowChan <- fmt.Sprintf("http://localhost:%d/settings", serverPort)
 			} else {
-				wv.Navigate(fmt.Sprintf("http://localhost:%d/settings", serverPort))
+				wv.Dispatch(func() {
+					wv.Navigate(fmt.Sprintf("http://localhost:%d/settings", serverPort))
+				})
 			}
 		case <-mRenew.ClickedCh:
 			err := globalConfig.Sign(context.Background(), nil)
