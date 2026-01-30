@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tyr Settings</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
         :root {
             /* Material Design 3 Dark Theme Tokens */
@@ -55,11 +56,7 @@
             position: relative;
         }
 
-        h2 {
-            margin: 0 0 2rem 0;
-            font-size: 1.75rem;
-            font-weight: 400;
-        }
+        h2 { margin: 0 0 2rem 0; font-size: 1.75rem; font-weight: 400; }
 
         .tabs {
             display: flex;
@@ -86,24 +83,13 @@
             color: var(--md-sys-color-on-primary-container);
         }
 
-        .tab-content {
-            display: none;
-            animation: fadeIn 0.3s ease;
-        }
-
+        .tab-content { animation: fadeIn 0.3s ease; }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .tab-content.active {
-            display: block;
-        }
-
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
+        .form-group { margin-bottom: 1.5rem; }
         label {
             display: block;
             font-size: 0.85rem;
@@ -122,18 +108,7 @@
             font-size: 1rem;
             outline: none;
         }
-
-        input:focus {
-            border-color: var(--md-sys-color-primary);
-            border-width: 2px;
-            padding: calc(0.9rem - 1px) calc(1rem - 1px);
-        }
-
-        .help-text {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 0.4rem;
-        }
+        input:focus { border-color: var(--md-sys-color-primary); border-width: 2px; }
 
         .btn {
             background: var(--md-sys-color-primary);
@@ -148,16 +123,8 @@
             margin-top: 1rem;
         }
 
-        .btn:hover {
-            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-            opacity: 0.9;
-        }
-
-        .btn-secondary {
-            background: var(--md-sys-color-secondary-container);
-            color: var(--md-sys-color-on-secondary-container);
-            margin-top: 1.5rem;
-        }
+        .btn:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.3); opacity: 0.9; }
+        .btn-secondary { background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); margin-top: 1.5rem; }
 
         .alert {
             padding: 1rem;
@@ -166,212 +133,250 @@
             font-size: 0.9rem;
             text-align: center;
         }
-
         .alert-success { background: rgba(180, 225, 181, 0.15); color: var(--md-sys-color-success); border: 1px solid var(--md-sys-color-success); }
         .alert-error { background: rgba(242, 184, 181, 0.15); color: var(--md-sys-color-error); border: 1px solid var(--md-sys-color-error); }
-        .alert-warning { background: rgba(208, 188, 255, 0.15); color: var(--md-sys-color-primary); border: 1px solid var(--md-sys-color-primary); }
 
         .back-link {
             position: absolute;
-            top: 2rem;
-            right: 2.5rem;
+            top: 2rem; right: 2.5rem;
             color: var(--md-sys-color-primary);
             text-decoration: none;
             font-size: 0.85rem;
-            font-weight: 500;
         }
+
+        .step-indicator {
+            display: flex; gap: 0.5rem; justify-content: center; margin-bottom: 1rem;
+        }
+        .step-dot { width: 8px; height: 8px; background: var(--md-sys-color-outline); border-radius: 50%; }
+        .step-dot.active { background: var(--md-sys-color-primary); }
+
+        [x-cloak] { display: none !important; }
     </style>
 </head>
 
-<body>
+<body x-data="settings()" x-init="init()">
     <div class="container">
-        <a href="/" class="back-link">← Dashboard</a>
-        <h2>Settings</h2>
+        <a href="/" class="back-link" x-show="!onboarding">← Dashboard</a>
+        <h2 x-text="onboarding ? 'Getting Started' : 'Settings'"></h2>
 
-        <div id="alert-container"></div>
+        <template x-if="alert.message">
+            <div class="alert" :class="'alert-' + alert.type" x-text="alert.message"></div>
+        </template>
 
-        <div class="tabs">
-            <div class="tab active" onclick="switchTab('login')">Login</div>
-            <div class="tab" onclick="switchTab('apikey')">API Key</div>
-            <div class="tab" onclick="switchTab('advanced')">Advanced</div>
-        </div>
-
-        <!-- Login Tab -->
-        <div class="tab-content active" id="tab-login">
-            <div class="form-group">
-                <label>Fenrir Server URL</label>
-                <input type="text" id="server-url-login" value="http://localhost:8080">
+        <!-- Main Settings UI -->
+        <div x-show="!onboarding" x-cloak>
+            <div class="tabs">
+                <div class="tab" :class="activeTab === 'login' ? 'active' : ''" @click="activeTab = 'login'">Login</div>
+                <div class="tab" :class="activeTab === 'apikey' ? 'active' : ''" @click="activeTab = 'apikey'">API Key</div>
+                <div class="tab" :class="activeTab === 'advanced' ? 'active' : ''" @click="activeTab = 'advanced'">Advanced</div>
             </div>
 
-            <div class="form-group">
-                <label>Username</label>
-                <input type="text" id="username" placeholder="alice">
-            </div>
-
-            <div class="form-group">
-                <label>Password</label>
-                <input type="password" id="password" placeholder="••••••••">
-            </div>
-
-            <div id="mfa-container" style="display: none;">
+            <div class="tab-content" x-show="activeTab === 'login'">
                 <div class="form-group">
-                    <label>MFA Code</label>
-                    <input type="text" id="mfa-code" placeholder="123456">
+                    <label>Fenrir Server URL</label>
+                    <input type="text" x-model="config.server_url">
                 </div>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" x-model="login.username" placeholder="alice">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" x-model="login.password" placeholder="••••••••">
+                </div>
+                <div x-show="login.mfaRequired" x-cloak>
+                    <div class="form-group">
+                        <label>MFA Code</label>
+                        <input type="text" x-model="login.mfaCode" placeholder="123456">
+                    </div>
+                </div>
+                <button class="btn" @click="doLogin()">Authenticate</button>
             </div>
 
-            <button class="btn" onclick="loginWithPassword()">Authenticate</button>
+            <div class="tab-content" x-show="activeTab === 'apikey'">
+                <div class="form-group">
+                    <label>Fenrir Server URL</label>
+                    <input type="text" x-model="config.server_url">
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" x-model="config.api_key" :placeholder="config.has_api_key ? '(saved securely in keychain)' : 'Enter API key'">
+                </div>
+                <button class="btn" @click="saveAPIConfig()">Save API Configuration</button>
+            </div>
+
+            <div class="tab-content" x-show="activeTab === 'advanced'">
+                <div class="form-group">
+                    <label>SSH Key Path</label>
+                    <input type="text" x-model="config.key_path">
+                </div>
+                <div class="form-group">
+                    <label>Key Type</label>
+                    <input type="text" x-model="config.key_type">
+                </div>
+                <button class="btn" @click="saveAdvanced()">Update Settings</button>
+                <button class="btn btn-secondary" @click="clearConfig()">Clear All Configurations</button>
+            </div>
         </div>
 
-        <!-- API Key Tab -->
-        <div class="tab-content" id="tab-apikey">
-            <div class="form-group">
-                <label>Fenrir Server URL</label>
-                <input type="text" id="server-url-apikey" value="http://localhost:8080">
+        <!-- Onboarding Wizard -->
+        <div x-show="onboarding" x-cloak>
+            <div class="step-indicator">
+                <div class="step-dot" :class="step === 1 ? 'active' : ''"></div>
+                <div class="step-dot" :class="step === 2 ? 'active' : ''"></div>
+                <div class="step-dot" :class="step === 3 ? 'active' : ''"></div>
             </div>
 
-            <div class="form-group">
-                <label>API Key</label>
-                <input type="password" id="api-key" placeholder="Enter API key">
-                <div class="help-text">Use an API key for persistent non-interactive access</div>
+            <div x-show="step === 1" class="tab-content">
+                <p style="margin-bottom: 2rem; color: var(--text-muted);">Welcome to Tyr! First, enter your Fenrir server URL.</p>
+                <div class="form-group">
+                    <label>Fenrir Server URL</label>
+                    <input type="text" x-model="config.server_url" placeholder="http://fenrir.homelab:8080">
+                </div>
+                <button class="btn" @click="step = 2">Continue</button>
             </div>
 
-            <button class="btn" onclick="saveAPIKey()">Save API Configuration</button>
-        </div>
-
-        <!-- Advanced Tab -->
-        <div class="tab-content" id="tab-advanced">
-            <div class="form-group">
-                <label>SSH Key Path</label>
-                <input type="text" id="key-path" placeholder="~/.ssh/id_ed25519">
+            <div x-show="step === 2" class="tab-content">
+                <p style="margin-bottom: 2rem; color: var(--text-muted);">Sign in to your account.</p>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" x-model="login.username">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" x-model="login.password">
+                </div>
+                <div x-show="login.mfaRequired" x-cloak>
+                    <div class="form-group">
+                        <label>MFA Code</label>
+                        <input type="text" x-model="login.mfaCode">
+                    </div>
+                </div>
+                <button class="btn" @click="doLogin()">Sign In</button>
+                <button class="btn btn-secondary" @click="step = 1" style="background: none; border: 1px solid var(--md-sys-color-outline);">Back</button>
             </div>
 
-            <div class="form-group">
-                <label>Key Type</label>
-                <input type="text" id="key-type" value="ed25519">
+            <div x-show="step === 3" class="tab-content">
+                <p style="margin-bottom: 2rem; color: var(--text-muted);">Everything is set up! Your credentials have been stored securely in your system's keychain.</p>
+                <div class="form-group">
+                    <label>SSH Key Location</label>
+                    <input type="text" x-model="config.key_path" readonly style="opacity: 0.7;">
+                </div>
+                <button class="btn" @click="finishOnboarding()">Go to Dashboard</button>
             </div>
-
-            <button class="btn" onclick="saveAdvanced()">Update Settings</button>
-
-            <button class="btn btn-secondary" onclick="clearConfig()">Clear All Configurations</button>
         </div>
     </div>
 
     <script>
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        function settings() {
+            return {
+                onboarding: false,
+                step: 1,
+                activeTab: 'login',
+                config: {
+                    server_url: '',
+                    key_path: '',
+                    key_type: '',
+                    has_api_key: false,
+                    api_key: ''
+                },
+                login: {
+                    username: '',
+                    password: '',
+                    mfaCode: '',
+                    mfaRequired: false
+                },
+                alert: { message: '', type: 'success' },
 
-            event.target.classList.add('active');
-            document.getElementById(`tab-${tabName}`).classList.add('active');
-        }
+                async init() {
+                    await this.loadConfig();
+                    if (!this.config.server_url || !this.config.has_api_key) {
+                        this.onboarding = true;
+                    }
+                },
 
-        function showAlert(message, type = 'success') {
-            const container = document.getElementById('alert-container');
-            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
-            setTimeout(() => container.innerHTML = '', 5000);
-        }
+                showAlert(msg, type = 'success') {
+                    this.alert = { message: msg, type };
+                    setTimeout(() => this.alert.message = '', 5000);
+                },
 
-        async function loginWithPassword() {
-            const serverURL = document.getElementById('server-url-login').value.trim();
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-            const mfaCode = document.getElementById('mfa-code').value.trim();
+                async loadConfig() {
+                    try {
+                        const resp = await fetch('/api/config');
+                        this.config = await resp.json();
+                    } catch (e) {}
+                },
 
-            try {
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        server_url: serverURL,
-                        username: username,
-                        password: password,
-                        mfa_code: mfaCode
-                    })
-                });
+                async doLogin() {
+                    try {
+                        const resp = await fetch('/api/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                server_url: this.config.server_url,
+                                username: this.login.username,
+                                password: this.login.password,
+                                mfa_code: this.login.mfaCode
+                            })
+                        });
+                        const data = await resp.json();
+                        if (data.mfa_required) {
+                            this.login.mfaRequired = true;
+                            this.showAlert('MFA required', 'warning');
+                            return;
+                        }
+                        if (resp.ok) {
+                            if (this.onboarding) {
+                                this.step = 3;
+                            } else {
+                                this.showAlert('Authenticated successfully');
+                                setTimeout(() => window.location.href = '/', 1000);
+                            }
+                        } else {
+                            this.showAlert(data.error || 'Login failed', 'error');
+                        }
+                    } catch (e) {
+                        this.showAlert('Connection error', 'error');
+                    }
+                },
 
-                const data = await response.json();
-                if (data.mfa_required) {
-                    document.getElementById('mfa-container').style.display = 'block';
-                    showAlert('MFA required. Please enter your code.', 'warning');
-                    return;
+                async saveAPIConfig() {
+                    const resp = await fetch('/api/config', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            server_url: this.config.server_url,
+                            api_key: this.config.api_key
+                        })
+                    });
+                    if (resp.ok) {
+                        this.showAlert('Configuration saved');
+                        setTimeout(() => window.location.href = '/', 1000);
+                    }
+                },
+
+                async saveAdvanced() {
+                    const resp = await fetch('/api/config/advanced', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            key_path: this.config.key_path,
+                            key_type: this.config.key_type
+                        })
+                    });
+                    if (resp.ok) this.showAlert('Settings updated');
+                },
+
+                async clearConfig() {
+                    if (confirm('Clear all settings?')) {
+                        await fetch('/api/config', { method: 'DELETE' });
+                        location.reload();
+                    }
+                },
+
+                finishOnboarding() {
+                    window.location.href = '/';
                 }
-
-                if (!response.ok) {
-                    showAlert(data.error || 'Login failed', 'error');
-                    return;
-                }
-
-                showAlert('✓ Authenticated successfully', 'success');
-                setTimeout(() => window.location.href = '/', 1000);
-            } catch (err) {
-                showAlert('Connection failed', 'error');
             }
         }
-
-        async function saveAPIKey() {
-            const serverURL = document.getElementById('server-url-apikey').value.trim();
-            const apiKey = document.getElementById('api-key').value.trim();
-
-            try {
-                const response = await fetch('/api/config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ server_url: serverURL, api_key: apiKey })
-                });
-
-                if (response.ok) {
-                    showAlert('✓ API Configuration saved', 'success');
-                    setTimeout(() => window.location.href = '/', 1000);
-                } else {
-                    showAlert('Failed to save configuration', 'error');
-                }
-            } catch (err) {
-                showAlert('Error saving configuration', 'error');
-            }
-        }
-
-        async function saveAdvanced() {
-            const keyPath = document.getElementById('key-path').value.trim();
-            const keyType = document.getElementById('key-type').value.trim();
-
-            const response = await fetch('/api/config/advanced', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key_path: keyPath, key_type: keyType })
-            });
-
-            if (response.ok) {
-                showAlert('✓ Advanced settings updated', 'success');
-            } else {
-                showAlert('Update failed', 'error');
-            }
-        }
-
-        async function clearConfig() {
-            if (confirm('Clear all saved settings?')) {
-                await fetch('/api/config', { method: 'DELETE' });
-                showAlert('Settings cleared', 'success');
-                setTimeout(() => location.reload(), 1000);
-            }
-        }
-
-        async function loadConfig() {
-            try {
-                const response = await fetch('/api/config');
-                const config = await response.json();
-
-                if (config.server_url) {
-                    document.getElementById('server-url-login').value = config.server_url;
-                    document.getElementById('server-url-apikey').value = config.server_url;
-                }
-                if (config.key_path) document.getElementById('key-path').value = config.key_path;
-                if (config.key_type) document.getElementById('key-type').value = config.key_type;
-                if (config.has_api_key) document.getElementById('api-key').placeholder = '(saved)';
-            } catch (err) {}
-        }
-
-        loadConfig();
     </script>
 </body>
 

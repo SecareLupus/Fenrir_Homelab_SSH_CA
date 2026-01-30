@@ -19,7 +19,7 @@
 
 ## Phase 20: Security & Robustness Hardening
 
-- [ ] **Sensitive Data Security**: Move API keys from plaintext JSON to system-native keychains (Secret Service/Keychain/DPAPI).
-- [ ] **Interactive Onboarding**: Implement a guided first-run experience for new users.
-- [ ] **Real-time Status Updates**: Replace polling with WebSockets or SSE for instant GUI feedback.
-- [ ] **Component-Based UI Refactor**: Modularize the frontend assets (e.g., using Alpine.js or Vite) to improve maintainability.
+- [x] **Sensitive Data Security**: Move API keys from plaintext JSON to system-native keychains (Secret Service/Keychain/DPAPI).
+- [x] **Interactive Onboarding**: Implement a guided first-run experience for new users.
+- [x] **Real-time Status Updates**: Replace polling with WebSockets or SSE for instant GUI feedback.
+- [x] **Component-Based UI Refactor**: Modularize the frontend assets (e.g., using Alpine.js or Vite) to improve maintainability.

@@ -30,6 +30,7 @@ import (
 	"github.com/getlantern/systray"
 	hook "github.com/robotn/gohook"
 	webview "github.com/webview/webview_go"
+	"github.com/zalando/go-keyring"
 )
 
 //go:embed assets/icon.png
@@ -47,14 +48,24 @@ var configPath string
 var wv webview.WebView
 var windowVisible bool = true
 
+// SSE support
+type sseClient chan string
+
+var sseClients = make(map[sseClient]bool)
+var sseAdd = make(chan sseClient)
+var sseRemove = make(chan sseClient)
+var sseBroadcast = make(chan string)
+
 // PersistentConfig stores user settings
 type PersistentConfig struct {
 	ServerURL   string   `json:"server_url"`
-	APIKey      string   `json:"api_key"`
 	KeyPath     string   `json:"key_path"`
 	KeyType     string   `json:"key_type"`
 	RecentHosts []string `json:"recent_hosts"`
 }
+
+const keychainService = "fenrir-ssh-ca"
+const keychainUser = "tyr"
 
 func main() {
 	// Determine config file path
@@ -74,7 +85,10 @@ func main() {
 		}
 	}
 
-	// 1. Start Renewal Loop
+	// 1. Start SSE Manager
+	go sseManager()
+
+	// 2. Start Renewal Loop
 	go renewalLoop()
 
 	// 2. Start HTTP Server
@@ -118,6 +132,18 @@ func loadSavedConfig() {
 		return // No saved config
 	}
 
+	// 1. Handle migration from old format (APIKey in JSON)
+	var raw map[string]any
+	json.Unmarshal(data, &raw)
+	if key, ok := raw["api_key"].(string); ok && key != "" {
+		log.Println("Migrating API key to system keychain...")
+		if err := saveApiKey(key); err == nil {
+			delete(raw, "api_key")
+			newData, _ := json.Marshal(raw)
+			os.WriteFile(configPath, newData, 0600)
+		}
+	}
+
 	var pc PersistentConfig
 	if err := json.Unmarshal(data, &pc); err != nil {
 		log.Printf("Failed to parse config: %v", err)
@@ -135,13 +161,27 @@ func loadSavedConfig() {
 		keyType = "ed25519"
 	}
 
+	apiKey, _ := getApiKey()
+
 	globalConfig = &client.Config{
 		CAURL:      pc.ServerURL,
 		KeyPath:    keyPath,
 		KeyType:    keyType,
-		APIKey:     pc.APIKey,
+		APIKey:     apiKey,
 		AutoEnroll: true,
 	}
+}
+
+func getApiKey() (string, error) {
+	return keyring.Get(keychainService, keychainUser)
+}
+
+func saveApiKey(key string) error {
+	return keyring.Set(keychainService, keychainUser, key)
+}
+
+func deleteApiKey() error {
+	return keyring.Delete(keychainService, keychainUser)
 }
 
 func saveConfig(pc PersistentConfig) error {
@@ -161,6 +201,7 @@ func startServer() {
 	http.HandleFunc("/api/config", handleConfig)
 	http.HandleFunc("/api/config/advanced", handleAdvancedConfig)
 	http.HandleFunc("/api/login", handleLogin)
+	http.HandleFunc("/api/events", handleEvents)
 
 	fmt.Printf("SSH-CA Control Center starting on http://localhost:%d\n", serverPort)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", serverPort), nil))
@@ -225,8 +266,10 @@ func onReady() {
 			err := globalConfig.Sign(context.Background(), nil)
 			if err != nil {
 				beeep.Alert("Renewal Failed", err.Error(), "")
+				sseBroadcast <- "renewal_failed"
 			} else {
 				beeep.Notify("Success", "Certificate renewed successfully", "")
+				sseBroadcast <- "status_update"
 				go syncSSHConfig()
 			}
 		case <-mQuit.ClickedCh:
@@ -270,11 +313,49 @@ func renewalLoop() {
 					beeep.Alert("Background Renewal Failed", "Please check your connection or security key", "")
 				} else {
 					beeep.Notify("Renewal Success", "Certificate renewed in background", "")
+					sseBroadcast <- "status_update"
 					go syncSSHConfig()
 				}
 			}
 		}
 		time.Sleep(15 * time.Minute)
+	}
+}
+
+func sseManager() {
+	for {
+		select {
+		case s := <-sseAdd:
+			sseClients[s] = true
+		case s := <-sseRemove:
+			delete(sseClients, s)
+		case msg := <-sseBroadcast:
+			for s := range sseClients {
+				s <- msg
+			}
+		}
+	}
+}
+
+func handleEvents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	client := make(sseClient)
+	sseAdd <- client
+	defer func() { sseRemove <- client }()
+
+	notify := r.Context().Done()
+	for {
+		select {
+		case <-notify:
+			return
+		case msg := <-client:
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			w.(http.Flusher).Flush()
+		}
 	}
 }
 
@@ -328,6 +409,7 @@ func handleRenew(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+	sseBroadcast <- "status_update"
 	w.Write([]byte("OK"))
 }
 
@@ -338,6 +420,7 @@ func handleLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	handleLaunchLogic(host)
+	sseBroadcast <- "status_update"
 	w.Write([]byte("Launched"))
 }
 
@@ -393,11 +476,12 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(data, &pc)
 
 		// Don't send the actual API key, just indicate if it exists
+		apiKey, _ := getApiKey()
 		response := map[string]any{
 			"server_url":  pc.ServerURL,
 			"key_path":    pc.KeyPath,
 			"key_type":    pc.KeyType,
-			"has_api_key": pc.APIKey != "",
+			"has_api_key": apiKey != "",
 		}
 		json.NewEncoder(w).Encode(response)
 
@@ -418,7 +502,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		// Update with new values
 		pc.ServerURL = req.ServerURL
-		pc.APIKey = strings.TrimSpace(req.APIKey)
+		if req.APIKey != "" {
+			saveApiKey(strings.TrimSpace(req.APIKey))
+		}
 
 		if err := saveConfig(pc); err != nil {
 			http.Error(w, "Failed to save config", 500)
@@ -427,11 +513,12 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		// Update global config
 		globalConfig.CAURL = pc.ServerURL
-		globalConfig.APIKey = pc.APIKey
+		globalConfig.APIKey, _ = getApiKey()
 
 		w.Write([]byte("OK"))
 
 	case "DELETE":
+		deleteApiKey()
 		os.Remove(configPath)
 		w.Write([]byte("OK"))
 	}
@@ -533,7 +620,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(data, &pc)
 
 	pc.ServerURL = req.ServerURL
-	pc.APIKey = loginResp.APIKey
+	if loginResp.APIKey != "" {
+		saveApiKey(loginResp.APIKey)
+	}
 
 	if err := saveConfig(pc); err != nil {
 		http.Error(w, "Failed to save config", 500)
@@ -542,7 +631,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Update global config
 	globalConfig.CAURL = pc.ServerURL
-	globalConfig.APIKey = pc.APIKey
+	globalConfig.APIKey, _ = getApiKey()
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }

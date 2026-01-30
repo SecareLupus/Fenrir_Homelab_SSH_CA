@@ -1,441 +1,335 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SSH CA Control Center</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
-      :root {
-        /* Material Design 3 Dark Theme Tokens */
-        --md-sys-color-primary: #d0bcff;
-        --md-sys-color-on-primary: #381e72;
-        --md-sys-color-primary-container: #4f378b;
-        --md-sys-color-on-primary-container: #eaddff;
-        --md-sys-color-secondary-container: #4a4458;
-        --md-sys-color-on-secondary-container: #e8def8;
-        --md-sys-color-surface: #1c1b1f;
-        --md-sys-color-on-surface: #e6e1e5;
-        --md-sys-color-surface-variant: #49454f;
-        --md-sys-color-on-surface-variant: #cac4d0;
-        --md-sys-color-outline: #938f99;
-        --md-sys-color-error: #f2b8b5;
-        --md-sys-color-success: #b4e1b5; /* Custom addition for CA status */
-
-        --bg: var(--md-sys-color-surface);
-        --text: var(--md-sys-color-on-surface);
-        --text-muted: var(--md-sys-color-on-surface-variant);
-      }
-
-      * {
-        box-sizing: border-box;
-        transition:
-          background-color 0.3s,
-          color 0.3s,
-          transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      }
-
-      body {
-        background: var(--bg);
-        color: var(--text);
-        font-family: "Roboto", sans-serif;
-        margin: 0;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        overflow: hidden;
-      }
-
-      .container {
-        width: 720px;
-        height: 480px;
-        background: var(--md-sys-color-surface);
-        border: 1px solid var(--md-sys-color-outline);
-        border-radius: 28px; /* M3 Extra Large */
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-        display: flex;
-        padding: 2rem;
-        gap: 2rem;
-        position: relative;
-      }
-
-      .card-left {
-        flex: 1.2;
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-      }
-
-      .card-right {
-        flex: 1;
-        background: var(--md-sys-color-secondary-container);
-        border-radius: 16px;
-        padding: 1.5rem;
-        display: flex;
-        flex-direction: column;
-        color: var(--md-sys-color-on-secondary-container);
-      }
-
-      h2 {
-        margin: 0;
-        font-size: 1.5rem;
-        font-weight: 500;
-        letter-spacing: 0.1px;
-      }
-
-      .status-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        background: var(--md-sys-color-primary-container);
-        color: var(--md-sys-color-on-primary-container);
-        padding: 0.6rem 1.2rem;
-        border-radius: 12px;
-        font-size: 0.9rem;
-        font-weight: 500;
-      }
-
-      .status-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: var(--md-sys-color-success);
-      }
-
-      .info-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-      }
-
-      .info-label {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-
-      .info-value {
-        font-size: 1rem;
-        font-family: "JetBrains Mono", monospace;
-        background: var(--md-sys-color-surface-variant);
-        padding: 0.5rem 0.8rem;
-        border-radius: 8px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .quick-launch-container {
-        position: relative;
-        margin-bottom: 1rem;
-      }
-
-      .quick-launch-input {
-        background: var(--md-sys-color-surface);
-        border: 1px solid var(--md-sys-color-outline);
-        padding: 0.8rem 1rem;
-        border-radius: 12px;
-        color: var(--text);
-        width: 100%;
-        outline: none;
-        font-size: 0.9rem;
-      }
-
-      .quick-launch-input:focus {
-        border-color: var(--md-sys-color-primary);
-        border-width: 2px;
-        padding: calc(0.8rem - 1px) calc(1rem - 1px);
-      }
-
-      .launch-btn {
-        position: absolute;
-        right: 6px;
-        top: 6px;
-        background: var(--md-sys-color-primary);
-        border: none;
-        color: var(--md-sys-color-on-primary);
-        padding: 8px 16px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        font-size: 0.8rem;
-      }
-
-      .launch-btn:hover {
-        opacity: 0.9;
-      }
-
-      .host-list {
-        flex: 1;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-      }
-
-      .host-item {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0.6rem 0.8rem;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        background: rgba(255, 255, 255, 0.03);
-      }
-
-      .host-item:hover {
-        background: rgba(255, 255, 255, 0.1);
-        transform: translateX(4px);
-      }
-
-      .host-icon {
-        opacity: 0.7;
-      }
-
-      .footer-tools {
-        display: flex;
-        gap: 1rem;
-        margin-top: auto;
-      }
-
-      .tool-btn {
-        background: var(--md-sys-color-surface-variant);
-        color: var(--md-sys-color-on-surface-variant);
-        border: none;
-        padding: 1rem;
-        border-radius: 16px;
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.8rem;
-        cursor: pointer;
-        font-weight: 500;
-      }
-
-      .tool-btn:hover {
-        background: var(--md-sys-color-primary-container);
-        color: var(--md-sys-color-on-primary-container);
-        transform: translateY(-2px);
-      }
-
-      .fido-touch-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(28, 27, 31, 0.9);
-        display: none;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        z-index: 100;
-        border-radius: 28px;
-      }
-
-      .pulse {
-        width: 72px;
-        height: 72px;
-        background: var(--md-sys-color-primary);
-        border-radius: 50%;
-        animation: pulse-ring 1.5s infinite;
-      }
-
-      @keyframes pulse-ring {
-        0% {
-          transform: scale(0.8);
-          box-shadow: 0 0 0 0 rgba(208, 188, 255, 0.6);
+        :root {
+            /* Material Design 3 Dark Theme Tokens */
+            --md-sys-color-primary: #D0BCFF;
+            --md-sys-color-on-primary: #381E72;
+            --md-sys-color-primary-container: #4F378B;
+            --md-sys-color-on-primary-container: #EADDFF;
+            --md-sys-color-secondary-container: #4A4458;
+            --md-sys-color-on-secondary-container: #E8DEF8;
+            --md-sys-color-surface: #1C1B1F;
+            --md-sys-color-on-surface: #E6E1E5;
+            --md-sys-color-surface-variant: #49454F;
+            --md-sys-color-on-surface-variant: #CAC4D0;
+            --md-sys-color-outline: #938F99;
+            --md-sys-color-error: #F2B8B5;
+            --md-sys-color-success: #B4E1B5;
+            
+            --bg: var(--md-sys-color-surface);
+            --text: var(--md-sys-color-on-surface);
+            --text-muted: var(--md-sys-color-on-surface-variant);
         }
-        70% {
-          transform: scale(1);
-          box-shadow: 0 0 0 20px rgba(208, 188, 255, 0);
-        }
-        100% {
-          transform: scale(0.8);
-          box-shadow: 0 0 0 0 rgba(208, 188, 255, 0);
-        }
-      }
 
-      /* Scrollbar styling */
-      .host-list::-webkit-scrollbar {
-        width: 4px;
-      }
-      .host-list::-webkit-scrollbar-thumb {
-        background: var(--md-sys-color-outline);
-        border-radius: 10px;
-      }
+        * {
+            box-sizing: border-box;
+            transition: background-color 0.3s, color 0.3s, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 720px;
+            height: 480px;
+            background: var(--md-sys-color-surface);
+            border: 1px solid var(--md-sys-color-outline);
+            border-radius: 28px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            display: flex;
+            padding: 2rem;
+            gap: 2rem;
+            position: relative;
+        }
+
+        .card-left {
+            flex: 1.2;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .card-right {
+            flex: 1;
+            background: var(--md-sys-color-secondary-container);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            color: var(--md-sys-color-on-secondary-container);
+        }
+
+        h2 { margin: 0; font-size: 1.5rem; font-weight: 500; }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+        .info-group { display: flex; flex-direction: column; gap: 0.25rem; }
+        .info-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-value {
+            font-size: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--md-sys-color-surface-variant);
+            padding: 0.5rem 0.8rem;
+            border-radius: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .quick-launch-container { position: relative; margin-bottom: 1rem; }
+        .quick-launch-input {
+            background: var(--md-sys-color-surface);
+            border: 1px solid var(--md-sys-color-outline);
+            padding: 0.8rem 1rem;
+            border-radius: 12px;
+            color: var(--text);
+            width: 100%;
+            outline: none;
+        }
+
+        .quick-launch-input:focus { border-color: var(--md-sys-color-primary); border-width: 2px; }
+
+        .launch-btn {
+            position: absolute;
+            right: 6px; top: 6px;
+            background: var(--md-sys-color-primary);
+            border: none;
+            color: var(--md-sys-color-on-primary);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .host-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
+        .host-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 0.8rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .host-item:hover { background: rgba(255, 255, 255, 0.1); transform: translateX(4px); }
+
+        .footer-tools { display: flex; gap: 1rem; margin-top: auto; }
+        .tool-btn {
+            background: var(--md-sys-color-surface-variant);
+            color: var(--md-sys-color-on-surface-variant);
+            border: none;
+            padding: 1rem;
+            border-radius: 16px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .tool-btn:hover { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); transform: translateY(-2px); }
+
+        .fido-touch-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(28, 27, 31, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            border-radius: 28px;
+        }
+
+        .pulse {
+            width: 72px; height: 72px;
+            background: var(--md-sys-color-primary);
+            border-radius: 50%;
+            animation: pulse-ring 1.5s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(208, 188, 255, 0.6); }
+            70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(208, 188, 255, 0); }
+            100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(208, 188, 255, 0); }
+        }
+
+        [x-cloak] { display: none !important; }
     </style>
-  </head>
+</head>
 
-  <body>
+<body x-data="app()" x-init="init()">
     <div class="container">
-      <div class="card-left">
-        <h2>Identity Status</h2>
-        <div id="status-container">
-          <div class="status-badge" id="status-badge">
-            <span class="status-dot" id="status-dot"></span>
-            <span id="status-text">Certified</span>
-          </div>
+        <div class="card-left">
+            <h2>Identity Status</h2>
+            <div>
+                <div class="status-badge" 
+                     :style="hasCert ? 'background: var(--md-sys-color-primary-container)' : 'background: rgba(242, 184, 181, 0.15)'">
+                    <span class="status-dot" :style="hasCert ? 'background: var(--md-sys-color-success)' : 'background: var(--md-sys-color-error)'"></span>
+                    <span x-text="hasCert ? 'Certified' : 'Unauthorized'"></span>
+                </div>
+            </div>
+
+            <div class="info-group">
+                <span class="info-label">Issued To</span>
+                <span class="info-value" x-text="fingerprint || 'Unknown'"></span>
+            </div>
+
+            <div class="info-group">
+                <span class="info-label">Expires In</span>
+                <span class="info-value" x-text="expiryText"></span>
+            </div>
+
+            <div class="footer-tools">
+                <button class="tool-btn" @click="renew()">
+                    <span style="font-size: 1.5rem;">refresh</span>
+                    <span>Renew Now</span>
+                </button>
+                <button class="tool-btn" @click="openSettings()">
+                    <span style="font-size: 1.5rem;">settings</span>
+                    <span>Settings</span>
+                </button>
+            </div>
         </div>
 
-        <div class="info-group">
-          <span class="info-label">Issued To</span>
-          <span class="info-value" id="user-display">...</span>
+        <div class="card-right">
+            <h2 style="font-size: 1.25rem;">Quick Connect</h2>
+            <p style="font-size: 0.8rem; opacity: 0.8; margin: 0.5rem 0 1.5rem 0;">
+                Launch a cert-authenticated session.
+            </p>
+            <div class="quick-launch-container">
+                <input type="text" class="quick-launch-input" placeholder="hostname or IP" x-model="hostSearch" @keypress.enter="quickConnect()">
+                <button class="launch-btn" @click="quickConnect()">Launch</button>
+            </div>
+
+            <div class="host-list">
+                <div class="info-label" style="margin-bottom: 0.5rem;">Recent Hosts</div>
+                <template x-for="host in recentHosts" :key="host">
+                    <div class="host-item" @click="hostSearch = host; quickConnect()">
+                        <span class="host-icon">🖥️</span>
+                        <span x-text="host"></span>
+                    </div>
+                </template>
+            </div>
         </div>
 
-        <div class="info-group">
-          <span class="info-label">Expires In</span>
-          <span class="info-value" id="expiry-display">...</span>
+        <div class="fido-touch-overlay" x-show="showFidoOverlay" x-cloak x-transition>
+            <div class="pulse"></div>
+            <p style="margin-top: 2rem; font-weight: 500; font-size: 1.2rem;">Touch Security Key</p>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">To authorize certificate renewal</p>
         </div>
-
-        <div class="footer-tools">
-          <button class="tool-btn" onclick="renew()">
-            <span style="font-size: 1.5rem">refresh</span>
-            <span>Renew Now</span>
-          </button>
-          <button class="tool-btn" onclick="openSettings()">
-            <span style="font-size: 1.5rem">settings</span>
-            <span>Settings</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="card-right">
-        <h2 style="font-size: 1.25rem">Quick Connect</h2>
-        <p style="font-size: 0.8rem; opacity: 0.8; margin: 0.5rem 0 1.5rem 0">
-          Launch a cert-authenticated session.
-        </p>
-        <div class="quick-launch-container">
-          <input
-            type="text"
-            class="quick-launch-input"
-            placeholder="hostname or IP"
-            id="host-search"
-          />
-          <button class="launch-btn" onclick="quickConnect()">Launch</button>
-        </div>
-
-        <div class="host-list" id="host-list">
-          <div class="info-label" style="margin-bottom: 0.5rem">
-            Recent Hosts
-          </div>
-          <div id="hosts-container">
-            <!-- Dynamic hosts go here -->
-          </div>
-        </div>
-      </div>
-
-      <div class="fido-touch-overlay" id="fido-overlay">
-        <div class="pulse"></div>
-        <p style="margin-top: 2rem; font-weight: 500; font-size: 1.2rem">
-          Touch Security Key
-        </p>
-        <p style="color: var(--text-muted); font-size: 0.9rem">
-          To authorize certificate renewal
-        </p>
-      </div>
     </div>
 
     <script>
-      async function updateStatus() {
-        try {
-          const resp = await fetch("/api/status");
-          const data = await resp.json();
+        function app() {
+            return {
+                hasCert: false,
+                fingerprint: '',
+                expiryText: '...',
+                recentHosts: [],
+                hostSearch: '',
+                showFidoOverlay: false,
 
-          document.getElementById("user-display").innerText =
-            data.Fingerprint || "Unknown";
-          document.getElementById("expiry-display").innerText = data.ExpiryText;
+                async init() {
+                    this.updateStatus();
+                    this.setupSSE();
+                },
 
-          const statusText = document.getElementById("status-text");
-          const statusBadge = document.getElementById("status-badge");
-          const statusDot = document.getElementById("status-dot");
+                setupSSE() {
+                    const es = new EventSource('/api/events');
+                    es.onmessage = (e) => {
+                        console.log("SSE Event:", e.data);
+                        if (e.data === 'status_update') {
+                            this.updateStatus();
+                        }
+                    };
+                    es.onerror = () => {
+                        console.log("SSE Connection lost, retrying...");
+                    };
+                },
 
-          if (data.HasCert) {
-            statusText.innerText = "Certified";
-            statusDot.style.background = "var(--md-sys-color-success)";
-            statusBadge.style.background =
-              "var(--md-sys-color-primary-container)";
-          } else {
-            statusText.innerText = "Unauthorized";
-            statusDot.style.background = "var(--md-sys-color-error)";
-            statusBadge.style.background = "rgba(242, 184, 181, 0.15)";
-          }
+                async updateStatus() {
+                    try {
+                        const resp = await fetch('/api/status');
+                        const data = await resp.json();
+                        this.hasCert = data.HasCert;
+                        this.fingerprint = data.Fingerprint;
+                        this.expiryText = data.ExpiryText;
+                        this.recentHosts = data.RecentHosts || [];
+                    } catch (e) {
+                        console.error("Status fetch failed", e);
+                    }
+                },
 
-          // Update host list
-          const container = document.getElementById("hosts-container");
-          container.innerHTML = "";
+                async renew() {
+                    const resp = await fetch('/api/renew', { method: 'POST' });
+                    if (resp.status === 202) {
+                        this.showFidoOverlay = true;
+                        // The status_update event will clear this via SSE
+                        const check = setInterval(async () => {
+                            const r = await fetch('/api/status');
+                            const d = await r.json();
+                            if (d.HasCert) {
+                                clearInterval(check);
+                                this.showFidoOverlay = false;
+                                this.updateStatus();
+                            }
+                        }, 1000);
+                    } else if (resp.ok) {
+                        this.updateStatus();
+                    }
+                },
 
-          const hosts = data.RecentHosts || ["pi-hole.local", "10.0.0.5"];
-          hosts.forEach((host) => {
-            const item = document.createElement("div");
-            item.className = "host-item";
-            item.onclick = () => {
-              document.getElementById("host-search").value = host;
-              quickConnect();
-            };
-            item.innerHTML = `<span class="host-icon">🖥️</span><span>${host}</span>`;
-            container.appendChild(item);
-          });
-        } catch (e) {
-          console.error("Failed to fetch status", e);
-        }
-      }
+                quickConnect() {
+                    if (this.hostSearch.trim()) {
+                        fetch(`/api/launch?host=${encodeURIComponent(this.hostSearch.trim())}`);
+                        this.hostSearch = '';
+                        setTimeout(() => this.updateStatus(), 500);
+                    }
+                },
 
-      async function renew() {
-        const resp = await fetch("/api/renew", { method: "POST" });
-        if (resp.status === 202) {
-          document.getElementById("fido-overlay").style.display = "flex";
-          // Poll for completion...
-          const poll = setInterval(async () => {
-            const r = await fetch("/api/status");
-            const d = await r.json();
-            if (d.HasCert) {
-              clearInterval(poll);
-              document.getElementById("fido-overlay").style.display = "none";
-              updateStatus();
+                openSettings() {
+                    window.location.href = '/settings';
+                }
             }
-          }, 1000);
-        } else if (resp.ok) {
-          updateStatus();
         }
-      }
-
-      function quickConnect() {
-        const host = document.getElementById("host-search").value.trim();
-        if (host) {
-          fetch(`/api/launch?host=${encodeURIComponent(host)}`);
-          // Briefly show feedback
-          const btn = document.querySelector(".launch-btn");
-          const originalText = btn.innerText;
-          btn.innerText = "...";
-          setTimeout(() => {
-            btn.innerText = originalText;
-            updateStatus(); // Refresh recent list
-          }, 1000);
-        }
-      }
-
-      function openSettings() {
-        window.location.href = "/settings";
-      }
-
-      document
-        .getElementById("host-search")
-        .addEventListener("keypress", (e) => {
-          if (e.key === "Enter") {
-            quickConnect();
-          }
-        });
-
-      // Initialize
-      updateStatus();
-      setInterval(updateStatus, 30000);
     </script>
-  </body>
+</body>
+
 </html>
