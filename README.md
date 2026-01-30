@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="assets/logo.png" width="160" alt="Fenrir Logo">
+</p>
+
 # Fenrir SSH CA
 
-A simple, single-binary SSH Certificate Authority designed for homelabs. It features a modern Web UI (Fenrir), a fleet management agent (Gleipnir), and a workstation client (Tyr).
+A simple, single-binary SSH Certificate Authority designed for homelabs. It features a modern Web UI (**Fenrir**), a fleet management agent (**Gleipnir**), and a workstation client (**Tyr**).
 
 ---
 

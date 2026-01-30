@@ -244,6 +244,10 @@ func startServer() {
 	http.HandleFunc("/api/config/advanced", handleAdvancedConfig)
 	http.HandleFunc("/api/login", handleLogin)
 	http.HandleFunc("/api/events", handleEvents)
+	http.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(iconData)
+	})
 
 	fmt.Printf("SSH-CA Control Center starting on http://localhost:%d\n", serverPort)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", serverPort), nil))
