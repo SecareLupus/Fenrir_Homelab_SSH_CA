@@ -67,6 +67,8 @@ type Server struct {
 	// Metrics
 	metricUserCertsSigned uint64
 	metricHostCertsSigned uint64
+	hostMetrics           map[string]hostMetrics
+	hostMetricsMu         sync.RWMutex
 
 	oidcProvider *oidc.Provider
 	oidcConfig   oauth2.Config
@@ -86,6 +88,15 @@ type Server struct {
 type challenge struct {
 	val     string
 	expires time.Time
+}
+
+type hostMetrics struct {
+	Heartbeats   uint64    `json:"heartbeats"`
+	Load1        float64   `json:"load_1"`
+	Load5        float64   `json:"load_5"`
+	Load15       float64   `json:"load_15"`
+	ActiveSSH    int       `json:"active_ssh"`
+	LastReported time.Time `json:"last_reported"`
 }
 
 type sessionData struct {
@@ -112,6 +123,7 @@ func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 		webauthnSessions: make(map[string]*webauthn.SessionData),
 		rateLimiter:      newRateLimiter(),
 		startTime:        time.Now(),
+		hostMetrics:      make(map[string]hostMetrics),
 	}
 	// Session secret initialization is now handled by syncSessionSecrets called in NewServer.
 	// If the DB is empty (first run), syncSessionSecrets will attempt to migrate the config secret or generate a new one.
@@ -217,6 +229,9 @@ func (s *Server) startBackgroundWorkers() {
 
 		// 4. Sync local cache
 		s.syncSessionSecrets()
+
+		// 5. Anomaly Detection
+		s.runAnomalyDetection()
 	}
 }
 
@@ -334,6 +349,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/v1/ca/host", s.handleAPIHostCA)
 	s.mux.HandleFunc("/api/v1/ca/pam/binary", s.handleAPIPAMBinary)
 	s.mux.HandleFunc("/api/v1/host/renew", s.handleAPIHostRenew)
+	s.mux.HandleFunc("/api/v1/host/report", s.handleAPIHostReport)
+	s.mux.HandleFunc("/api/v1/host/audit", s.handleAPIHostAudit)
+	s.mux.HandleFunc("/api/v1/search", s.handleAPISearch)
+	s.mux.HandleFunc("/admin/search", s.handleAdminSearch)
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/docs", s.handleDocs)
@@ -812,6 +831,13 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		"HostCAKey": string(hostCA),
 		"Mode":      s.cfg.Mode,
 	}
+
+	if data["IsAdmin"].(bool) {
+		s.hostMetricsMu.RLock()
+		data["HostMetrics"] = s.hostMetrics
+		s.hostMetricsMu.RUnlock()
+	}
+
 	s.renderPage(w, "dashboard.html", data)
 }
 
@@ -1901,6 +1927,17 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# HELP ssh_ca_host_certs_signed_total Total number of host certificates signed\n")
 	fmt.Fprintf(w, "# TYPE ssh_ca_host_certs_signed_total counter\n")
 	fmt.Fprintf(w, "ssh_ca_host_certs_signed_total %d\n", atomic.LoadUint64(&s.metricHostCertsSigned))
+
+	s.hostMetricsMu.RLock()
+	defer s.hostMetricsMu.RUnlock()
+
+	for host, m := range s.hostMetrics {
+		fmt.Fprintf(w, "gleipnir_heartbeats_total{host=\"%s\"} %d\n", host, m.Heartbeats)
+		fmt.Fprintf(w, "gleipnir_load_1{host=\"%s\"} %f\n", host, m.Load1)
+		fmt.Fprintf(w, "gleipnir_load_5{host=\"%s\"} %f\n", host, m.Load5)
+		fmt.Fprintf(w, "gleipnir_load_15{host=\"%s\"} %f\n", host, m.Load15)
+		fmt.Fprintf(w, "gleipnir_active_ssh_sessions{host=\"%s\"} %d\n", host, m.ActiveSSH)
+	}
 }
 
 func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
@@ -1994,6 +2031,159 @@ func (s *Server) handleAPIHostRenew(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(ssh.MarshalAuthorizedKey(cert))
+}
+
+func (s *Server) handleAPIHostReport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	apiKey := r.Header.Get("X-Host-API-Key")
+	if apiKey == "" {
+		http.Error(w, "API Key required", 401)
+		return
+	}
+	hash := auth.HashAPIKey(apiKey, s.systemSalt)
+	hostname, err := s.db.GetHostByAPIKey(hash)
+	if err != nil {
+		http.Error(w, "Invalid API Key", 401)
+		return
+	}
+
+	var metrics hostMetrics
+	if err := json.NewDecoder(r.Body).Decode(&metrics); err != nil {
+		http.Error(w, "Invalid JSON", 400)
+		return
+	}
+	metrics.LastReported = time.Now()
+
+	s.hostMetricsMu.Lock()
+	s.hostMetrics[hostname] = metrics
+	s.hostMetricsMu.Unlock()
+
+	_ = s.db.UpdateHostLastSeen(hostname)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAPIHostAudit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	apiKey := r.Header.Get("X-Host-API-Key")
+	if apiKey == "" {
+		http.Error(w, "API Key required", 401)
+		return
+	}
+	hash := auth.HashAPIKey(apiKey, s.systemSalt)
+	hostname, err := s.db.GetHostByAPIKey(hash)
+	if err != nil {
+		http.Error(w, "Invalid API Key", 401)
+		return
+	}
+
+	var event struct {
+		Event    string `json:"event"`
+		Metadata string `json:"metadata"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+		http.Error(w, "Invalid JSON", 400)
+		return
+	}
+
+	s.db.LogEvent(nil, "host_"+event.Event, fmt.Sprintf("Host: %s | %s", hostname, event.Metadata))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) runAnomalyDetection() {
+	// Look for brute force certificate requests (more than 10 events in 5 minutes for same fingerprint or user)
+	logs, err := s.db.ListAuditLogs(100)
+	if err != nil {
+		return
+	}
+
+	counts := make(map[string]int)
+	for _, l := range logs {
+		// Only consider recent logs (last 10 mins)
+		t, _ := time.Parse("2006-01-02 15:04:05", l.CreatedAt)
+		if time.Since(t) > 10*time.Minute {
+			continue
+		}
+
+		if strings.Contains(l.Event, "cert_request") {
+			counts[l.Username]++
+		}
+	}
+
+	for user, count := range counts {
+		if count > 10 {
+			msg := fmt.Sprintf("Possible brute-force cert request detected for user %s (%d requests in 10m)", user, count)
+			s.db.LogEvent(nil, "anomaly_detected", msg)
+			log.Printf("ALERT: %s", msg)
+		}
+	}
+}
+
+func (s *Server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		json.NewEncoder(w).Encode(map[string]any{"results": []any{}})
+		return
+	}
+
+	// Search Hosts
+	hosts, _ := s.db.ListHosts()
+	var results []map[string]any
+
+	for _, h := range hosts {
+		if strings.Contains(strings.ToLower(h.Hostname), strings.ToLower(query)) || strings.Contains(h.Fingerprint, query) {
+			results = append(results, map[string]any{
+				"type": "host",
+				"name": h.Hostname,
+				"url":  "/admin/hosts",
+				"info": h.Fingerprint,
+			})
+		}
+	}
+
+	// Search Users
+	users, _ := s.db.ListUsers()
+	for _, u := range users {
+		if strings.Contains(strings.ToLower(u.Username), strings.ToLower(query)) {
+			results = append(results, map[string]any{
+				"type": "user",
+				"name": u.Username,
+				"url":  "/admin/users",
+				"info": u.Role,
+			})
+		}
+	}
+
+	// Search Logs
+	logs, _ := s.db.ListAuditLogs(50)
+	for _, l := range logs {
+		if strings.Contains(strings.ToLower(l.Event), strings.ToLower(query)) || strings.Contains(strings.ToLower(l.Metadata), strings.ToLower(query)) {
+			results = append(results, map[string]any{
+				"type": "log",
+				"name": l.Event,
+				"url":  "/admin/audit",
+				"info": l.Metadata,
+			})
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{"results": results})
+}
+
+func (s *Server) handleAdminSearch(w http.ResponseWriter, r *http.Request) {
+	username := s.authenticate(r)
+	if username == "" || !s.isAdmin(username) {
+		http.Redirect(w, r, "/login", 302)
+		return
+	}
+	s.renderPage(w, "search.html", map[string]any{"User": username, "IsAdmin": true, "Query": r.URL.Query().Get("q")})
 }
 
 func (s *Server) verifyPoP(w http.ResponseWriter, r *http.Request, pubKey ssh.PublicKey) (bool, string) {

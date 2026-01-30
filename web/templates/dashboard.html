@@ -136,6 +136,46 @@ HostCertificate /etc/ssh/ssh_host_ed25519-cert.pub</pre>
     </form>
 </div>
 
+{{if .IsAdmin}}
+<div class="card">
+    <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">Fleet Real-time Status</h2>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Live health and activity metrics from Gleipnir agents.</p>
+
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="text-align: left; border-bottom: 1px solid var(--border);">
+                    <th style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted);">Hostname</th>
+                    <th style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted);">Load (1/5/15)</th>
+                    <th style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted);">SSH Sessions</th>
+                    <th style="padding: 1rem; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted);">Last Seen</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range $host, $m := .HostMetrics}}
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 1rem; font-weight: 500;">{{$host}}</td>
+                    <td style="padding: 1rem; font-family: monospace; font-size: 0.85rem;">
+                        {{printf "%.2f" $m.Load1}} / {{printf "%.2f" $m.Load5}} / {{printf "%.2f" $m.Load15}}
+                    </td>
+                    <td style="padding: 1rem;">
+                        <span class="badge" style="background: rgba(16, 185, 129, 0.1); color: var(--success);">{{$m.ActiveSSH}} Active</span>
+                    </td>
+                    <td style="padding: 1rem; font-size: 0.85rem; color: var(--text-muted);">
+                        {{$m.LastReported.Format "15:04:05"}}
+                    </td>
+                </tr>
+                {{else}}
+                <tr>
+                    <td colspan="4" style="padding: 2rem; text-align: center; color: var(--text-muted);">No metrics reported yet.</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}
+
 <script>
     document.getElementById('cert-form').addEventListener('submit', async (e) => {
         e.preventDefault();

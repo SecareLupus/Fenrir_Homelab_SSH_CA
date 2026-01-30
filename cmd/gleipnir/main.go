@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -21,8 +22,10 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/coreos/go-systemd/v22/sdjournal"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -38,6 +41,9 @@ func main() {
 	flag.Parse()
 
 	log.Printf("Starting SSH CA Agent (Syncing from %s every %s)", *caURL, *interval)
+
+	// Start Audit Watcher (Journald)
+	go watchJournal(*caURL, *apiKey)
 
 	ticker := time.NewTicker(*interval)
 	for ; ; <-ticker.C {
@@ -78,6 +84,146 @@ func main() {
 			log.Println("Restarting sshd to apply changes...")
 			exec.Command("systemctl", "reload", "ssh").Run()
 		}
+
+		// 6. Report Metrics
+		reportMetrics(*caURL, *apiKey)
+	}
+}
+
+type HostMetrics struct {
+	Heartbeats uint64  `json:"heartbeats"`
+	Load1      float64 `json:"load_1"`
+	Load5      float64 `json:"load_5"`
+	Load15     float64 `json:"load_15"`
+	ActiveSSH  int     `json:"active_ssh"`
+}
+
+var heartbeats uint64
+
+func reportMetrics(caURL, apiKey string) {
+	atomic.AddUint64(&heartbeats, 1)
+	load1, load5, load15 := getSystemLoad()
+	activeSSH := countActiveSSHSessions()
+
+	m := HostMetrics{
+		Heartbeats: atomic.LoadUint64(&heartbeats),
+		Load1:      load1,
+		Load5:      load5,
+		Load15:     load15,
+		ActiveSSH:  activeSSH,
+	}
+
+	body, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequest("POST", caURL+"/api/v1/host/report", bytes.NewBuffer(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("X-Host-API-Key", apiKey)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
+	}
+}
+
+func getSystemLoad() (f1, f5, f15 float64) {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return
+	}
+	fmt.Sscanf(string(data), "%f %f %f", &f1, &f5, &f15)
+	return
+}
+
+func countActiveSSHSessions() int {
+	out, err := exec.Command("pgrep", "-c", "-f", "sshd: [a-zA-Z0-9]").Output()
+	if err != nil {
+		return 0
+	}
+	var count int
+	fmt.Sscanf(string(out), "%d", &count)
+	return count
+}
+
+func watchJournal(caURL, apiKey string) {
+	j, err := sdjournal.NewJournal()
+	if err != nil {
+		log.Printf("Error opening journal: %v (Is systemd/journald available?)", err)
+		return
+	}
+	defer j.Close()
+
+	err = j.AddMatch("_COMM=sshd")
+	if err != nil {
+		log.Printf("Error adding journal match: %v", err)
+		return
+	}
+
+	err = j.SeekTail()
+	if err != nil {
+		log.Printf("Error seeking journal tail: %v", err)
+		return
+	}
+	j.Previous() // Skip to end
+
+	for {
+		n := j.Wait(2 * time.Second)
+		if n == sdjournal.SD_JOURNAL_NOP {
+			continue
+		}
+
+		for {
+			n, err := j.Next()
+			if err != nil || n == 0 {
+				break
+			}
+
+			entry, err := j.GetEntry()
+			if err != nil {
+				continue
+			}
+
+			msg := entry.Fields["MESSAGE"]
+			if strings.Contains(msg, "Accepted") || strings.Contains(msg, "session opened") {
+				reportAuditEvent(caURL, apiKey, "session_start", msg)
+			} else if strings.Contains(msg, "session closed") || strings.Contains(msg, "Disconnected") {
+				reportAuditEvent(caURL, apiKey, "session_end", msg)
+			}
+		}
+	}
+}
+
+func reportAuditEvent(caURL, apiKey, event, metadata string) {
+	payload := struct {
+		Event    string `json:"event"`
+		Metadata string `json:"metadata"`
+	}{
+		Event:    event,
+		Metadata: metadata,
+	}
+
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest("POST", caURL+"/api/v1/host/audit", bytes.NewBuffer(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("X-Host-API-Key", apiKey)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
 	}
 }
 

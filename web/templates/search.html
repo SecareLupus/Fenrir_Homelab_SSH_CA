@@ -1,0 +1,56 @@
+{{define "content"}}
+<div class="card">
+    <div style="margin-bottom: 2rem;">
+        <h2 style="margin: 0;">Search Results</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">Results for "{{.Query}}"</p>
+    </div>
+
+    <div id="search-results-container">
+        <p id="searching-msg">Searching...</p>
+    </div>
+</div>
+
+<script>
+window.onload = function() {
+    const query = new URLSearchParams(window.location.search).get('q');
+    if (!query) return;
+
+    fetch('/api/v1/search?q=' + encodeURIComponent(query))
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('search-results-container');
+            const searchingMsg = document.getElementById('searching-msg');
+            
+            if (searchingMsg) searchingMsg.remove();
+
+            if (data.results.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-muted); text-align: center; padding: 2rem;">No results found.</p>';
+                return;
+            }
+
+            data.results.forEach(res => {
+                const div = document.createElement('div');
+                div.style.padding = '1rem';
+                div.style.borderBottom = '1px solid var(--border)';
+                div.style.display = 'flex';
+                div.style.justifyContent = 'space-between';
+                div.style.alignItems = 'center';
+                
+                let typeColor = '#3b82f6';
+                if (res.type === 'user') typeColor = '#10b981';
+                if (res.type === 'log') typeColor = '#f59e0b';
+
+                div.innerHTML = `
+                    <div>
+                        <span class="badge" style="background: ${typeColor}22; color: ${typeColor}; border: 1px solid ${typeColor}44; margin-right: 0.5rem; padding: 0.1rem 0.4rem; font-size: 0.6rem;">${res.type.toUpperCase()}</span>
+                        <a href="${res.url}" style="color: var(--text); text-decoration: none; font-weight: 600;">${res.name}</a>
+                        <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0.2rem 0 0 0;">${res.info}</p>
+                    </div>
+                    <a href="${res.url}" class="btn-secondary" style="padding: 0.4rem 0.8rem;">View</a>
+                `;
+                container.appendChild(div);
+            });
+        });
+};
+</script>
+{{end}}

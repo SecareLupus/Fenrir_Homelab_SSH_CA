@@ -198,7 +198,15 @@
 
 <body>
     <header>
-        <h1>Fenrir SSH CA</h1>
+        <div style="display: flex; align-items: center; gap: 2rem;">
+            <h1>Fenrir SSH CA</h1>
+            {{if .User}}
+            <form action="/admin/search" method="GET" style="margin: 0; min-width: 300px;">
+                <input type="text" name="q" placeholder="Global search..." value="{{.Query}}" 
+                       style="margin-bottom: 0; padding: 0.5rem 1rem; background: rgba(255,255,255,0.05); width: 100%;">
+            </form>
+            {{end}}
+        </div>
         {{if .User}}
         <span>{{.User}} <a href="/logout" style="color: var(--primary); margin-left: 1rem;">Logout</a></span>
         {{end}}
