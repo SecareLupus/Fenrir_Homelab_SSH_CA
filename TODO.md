@@ -2,11 +2,11 @@
 
 ## Phase 18: Tyr Client UX & Material Design 3
 
-- [ ] **Material Design 3 Implementation**: Transition from Glassmorphism to M3 aesthetics (System tokens, rounded components, M3 color palettes).
-- [ ] **Modern Typography**: Implement Google Fonts (e.g., Robot, Inter, or Outfit) using M3 type scales.
-- [ ] **Micro-animations**: Add smooth M3-style transitions and responsive surface interactions.
-- [ ] **Dynamic Host Inventory**: Replace static hosts with a dynamic list tracking recent connections.
-- [ ] **Connection Feedback**: Provide visual "Connecting..." states and launch success/failure notifications.
+- [x] **Material Design 3 Implementation**: Transition from Glassmorphism to M3 aesthetics (System tokens, rounded components, M3 color palettes).
+- [x] **Modern Typography**: Implement Google Fonts (e.g., Robot, Inter, or Outfit) using M3 type scales.
+- [x] **Micro-animations**: Add smooth M3-style transitions and responsive surface interactions.
+- [x] **Dynamic Host Inventory**: Replace static hosts with a dynamic list tracking recent connections.
+- [x] **Connection Feedback**: Provide visual "Connecting..." states and launch success/failure notifications.
 
 ## Phase 19: Desktop Integration & Native Window
 

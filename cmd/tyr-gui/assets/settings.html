@@ -5,50 +5,99 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tyr Settings</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #0b0f19;
-            --surface: rgba(30, 41, 59, 0.7);
-            --primary: #3b82f6;
-            --accent: #10b981;
-            --warning: #f59e0b;
-            --text: #f8fafc;
-            --text-muted: #94a3b8;
-            --border: rgba(255, 255, 255, 0.1);
+            /* Material Design 3 Dark Theme Tokens */
+            --md-sys-color-primary: #D0BCFF;
+            --md-sys-color-on-primary: #381E72;
+            --md-sys-color-primary-container: #4F378B;
+            --md-sys-color-on-primary-container: #EADDFF;
+            --md-sys-color-secondary-container: #4A4458;
+            --md-sys-color-on-secondary-container: #E8DEF8;
+            --md-sys-color-surface: #1C1B1F;
+            --md-sys-color-on-surface: #E6E1E5;
+            --md-sys-color-surface-variant: #49454F;
+            --md-sys-color-on-surface-variant: #CAC4D0;
+            --md-sys-color-outline: #938F99;
+            --md-sys-color-error: #F2B8B5;
+            --md-sys-color-success: #B4E1B5;
+
+            --bg: var(--md-sys-color-surface);
+            --text: var(--md-sys-color-on-surface);
+            --text-muted: var(--md-sys-color-on-surface-variant);
         }
 
         * {
             box-sizing: border-box;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         body {
             background: var(--bg);
             color: var(--text);
-            font-family: 'Inter', -apple-system, sans-serif;
+            font-family: 'Roboto', sans-serif;
             margin: 0;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             overflow: hidden;
-            background: radial-gradient(circle at top right, #1e293b, #0b0f19);
         }
 
         .container {
             width: 600px;
-            background: var(--surface);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            padding: 2rem;
+            background: var(--md-sys-color-surface);
+            border: 1px solid var(--md-sys-color-outline);
+            border-radius: 28px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            padding: 2.5rem;
+            position: relative;
         }
 
         h2 {
-            margin: 0 0 1.5rem 0;
-            font-size: 1.5rem;
-            font-weight: 600;
+            margin: 0 0 2rem 0;
+            font-size: 1.75rem;
+            font-weight: 400;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            background: var(--md-sys-color-surface-variant);
+            padding: 4px;
+            border-radius: 99px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 0.6rem;
+            text-align: center;
+            cursor: pointer;
+            border-radius: 99px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .tab.active {
+            background: var(--md-sys-color-primary-container);
+            color: var(--md-sys-color-on-primary-container);
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .tab-content.active {
+            display: block;
         }
 
         .form-group {
@@ -58,147 +107,86 @@
         label {
             display: block;
             font-size: 0.85rem;
-            color: var(--text-muted);
+            color: var(--md-sys-color-primary);
             margin-bottom: 0.5rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+            font-weight: 500;
         }
 
         input {
             width: 100%;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border);
-            padding: 0.75rem 1rem;
-            border-radius: 12px;
-            color: white;
-            font-size: 0.95rem;
+            background: transparent;
+            border: 1px solid var(--md-sys-color-outline);
+            padding: 0.9rem 1rem;
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 1rem;
             outline: none;
-            transition: border-color 0.2s;
         }
 
         input:focus {
-            border-color: var(--primary);
+            border-color: var(--md-sys-color-primary);
+            border-width: 2px;
+            padding: calc(0.9rem - 1px) calc(1rem - 1px);
         }
 
-        .tabs {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 2rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .tab {
-            padding: 0.75rem 1.5rem;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.2s;
-            font-weight: 500;
+        .help-text {
+            font-size: 0.75rem;
             color: var(--text-muted);
-        }
-
-        .tab.active {
-            color: var(--primary);
-            border-bottom-color: var(--primary);
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
+            margin-top: 0.4rem;
         }
 
         .btn {
-            background: var(--primary);
+            background: var(--md-sys-color-primary);
             border: none;
-            color: white;
-            padding: 0.875rem 1.5rem;
-            border-radius: 12px;
+            color: var(--md-sys-color-on-primary);
+            padding: 1rem;
+            border-radius: 99px;
             cursor: pointer;
-            font-weight: 600;
+            font-weight: 500;
             font-size: 0.95rem;
             width: 100%;
-            transition: all 0.2s;
+            margin-top: 1rem;
         }
 
         .btn:hover {
-            background: #2563eb;
-            transform: translateY(-1px);
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            opacity: 0.9;
         }
 
         .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.15);
+            background: var(--md-sys-color-secondary-container);
+            color: var(--md-sys-color-on-secondary-container);
+            margin-top: 1.5rem;
         }
 
         .alert {
             padding: 1rem;
             border-radius: 12px;
-            margin-bottom: 1rem;
+            margin-bottom: 1.5rem;
             font-size: 0.9rem;
+            text-align: center;
         }
 
-        .alert-success {
-            background: rgba(16, 185, 129, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.2);
-            color: var(--accent);
-        }
+        .alert-success { background: rgba(180, 225, 181, 0.15); color: var(--md-sys-color-success); border: 1px solid var(--md-sys-color-success); }
+        .alert-error { background: rgba(242, 184, 181, 0.15); color: var(--md-sys-color-error); border: 1px solid var(--md-sys-color-error); }
+        .alert-warning { background: rgba(208, 188, 255, 0.15); color: var(--md-sys-color-primary); border: 1px solid var(--md-sys-color-primary); }
 
-        .alert-error {
-            background: rgba(244, 63, 94, 0.1);
-            border: 1px solid rgba(244, 63, 94, 0.2);
-            color: #f43f5e;
-        }
-
-        .alert-warning {
-            background: rgba(245, 158, 11, 0.1);
-            border: 1px solid rgba(245, 158, 11, 0.2);
-            color: var(--warning);
-        }
-
-        .help-text {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            margin-top: 0.5rem;
-        }
-
-        .status-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
+        .back-link {
+            position: absolute;
+            top: 2rem;
+            right: 2.5rem;
+            color: var(--md-sys-color-primary);
+            text-decoration: none;
             font-size: 0.85rem;
-            margin-top: 1rem;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-
-        .status-dot.connected {
-            background: var(--accent);
-            box-shadow: 0 0 10px var(--accent);
-        }
-
-        .status-dot.disconnected {
-            background: #64748b;
+            font-weight: 500;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h2>⚙️ Tyr Settings</h2>
+        <a href="/" class="back-link">← Dashboard</a>
+        <h2>Settings</h2>
 
         <div id="alert-container"></div>
 
@@ -212,8 +200,7 @@
         <div class="tab-content active" id="tab-login">
             <div class="form-group">
                 <label>Fenrir Server URL</label>
-                <input type="text" id="server-url-login" value="http://localhost:8080"
-                    placeholder="http://fenrir.example.com:8080">
+                <input type="text" id="server-url-login" value="http://localhost:8080">
             </div>
 
             <div class="form-group">
@@ -228,35 +215,28 @@
 
             <div id="mfa-container" style="display: none;">
                 <div class="form-group">
-                    <label>MFA Code (if enabled)</label>
+                    <label>MFA Code</label>
                     <input type="text" id="mfa-code" placeholder="123456">
-                    <div class="help-text">Enter your TOTP code or backup code</div>
                 </div>
             </div>
 
-            <button class="btn" onclick="loginWithPassword()">Login & Save</button>
-
-            <div class="status-indicator" id="login-status" style="display: none;">
-                <div class="status-dot connected"></div>
-                <span>Authenticated</span>
-            </div>
+            <button class="btn" onclick="loginWithPassword()">Authenticate</button>
         </div>
 
         <!-- API Key Tab -->
         <div class="tab-content" id="tab-apikey">
             <div class="form-group">
                 <label>Fenrir Server URL</label>
-                <input type="text" id="server-url-apikey" value="http://localhost:8080"
-                    placeholder="http://fenrir.example.com:8080">
+                <input type="text" id="server-url-apikey" value="http://localhost:8080">
             </div>
 
             <div class="form-group">
                 <label>API Key</label>
-                <input type="password" id="api-key" placeholder="Enter your API key">
-                <div class="help-text">Generate an API key from the Fenrir dashboard</div>
+                <input type="password" id="api-key" placeholder="Enter API key">
+                <div class="help-text">Use an API key for persistent non-interactive access</div>
             </div>
 
-            <button class="btn" onclick="saveAPIKey()">Save Configuration</button>
+            <button class="btn" onclick="saveAPIKey()">Save API Configuration</button>
         </div>
 
         <!-- Advanced Tab -->
@@ -264,26 +244,21 @@
             <div class="form-group">
                 <label>SSH Key Path</label>
                 <input type="text" id="key-path" placeholder="~/.ssh/id_ed25519">
-                <div class="help-text">Path to your SSH private key</div>
             </div>
 
             <div class="form-group">
                 <label>Key Type</label>
-                <input type="text" id="key-type" value="ed25519" placeholder="ed25519 or ed25519-sk">
-                <div class="help-text">Use ed25519-sk for hardware security keys</div>
+                <input type="text" id="key-type" value="ed25519">
             </div>
 
-            <button class="btn btn-secondary" onclick="saveAdvanced()">Save Advanced Settings</button>
+            <button class="btn" onclick="saveAdvanced()">Update Settings</button>
 
-            <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border);">
-                <button class="btn btn-secondary" onclick="clearConfig()">Clear All Settings</button>
-            </div>
+            <button class="btn btn-secondary" onclick="clearConfig()">Clear All Configurations</button>
         </div>
     </div>
 
     <script>
         function switchTab(tabName) {
-            // Update tab buttons
             document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
@@ -303,11 +278,6 @@
             const password = document.getElementById('password').value;
             const mfaCode = document.getElementById('mfa-code').value.trim();
 
-            if (!serverURL || !username || !password) {
-                showAlert('Please fill in all required fields', 'error');
-                return;
-            }
-
             try {
                 const response = await fetch('/api/login', {
                     method: 'POST',
@@ -321,7 +291,6 @@
                 });
 
                 const data = await response.json();
-
                 if (data.mfa_required) {
                     document.getElementById('mfa-container').style.display = 'block';
                     showAlert('MFA required. Please enter your code.', 'warning');
@@ -333,13 +302,10 @@
                     return;
                 }
 
-                showAlert('✓ Successfully authenticated! Close this window to continue.', 'success');
-                document.getElementById('login-status').style.display = 'flex';
-
-                // Notify parent window to refresh
-                setTimeout(() => window.location.href = '/', 1500);
+                showAlert('✓ Authenticated successfully', 'success');
+                setTimeout(() => window.location.href = '/', 1000);
             } catch (err) {
-                showAlert('Connection failed: ' + err.message, 'error');
+                showAlert('Connection failed', 'error');
             }
         }
 
@@ -347,29 +313,21 @@
             const serverURL = document.getElementById('server-url-apikey').value.trim();
             const apiKey = document.getElementById('api-key').value.trim();
 
-            if (!serverURL || !apiKey) {
-                showAlert('Please fill in all fields', 'error');
-                return;
-            }
-
             try {
                 const response = await fetch('/api/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        server_url: serverURL,
-                        api_key: apiKey
-                    })
+                    body: JSON.stringify({ server_url: serverURL, api_key: apiKey })
                 });
 
                 if (response.ok) {
-                    showAlert('✓ Configuration saved! Close this window to continue.', 'success');
-                    setTimeout(() => window.location.href = '/', 1500);
+                    showAlert('✓ API Configuration saved', 'success');
+                    setTimeout(() => window.location.href = '/', 1000);
                 } else {
                     showAlert('Failed to save configuration', 'error');
                 }
             } catch (err) {
-                showAlert('Error: ' + err.message, 'error');
+                showAlert('Error saving configuration', 'error');
             }
         }
 
@@ -380,28 +338,24 @@
             const response = await fetch('/api/config/advanced', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    key_path: keyPath,
-                    key_type: keyType
-                })
+                body: JSON.stringify({ key_path: keyPath, key_type: keyType })
             });
 
             if (response.ok) {
-                showAlert('✓ Advanced settings saved', 'success');
+                showAlert('✓ Advanced settings updated', 'success');
             } else {
-                showAlert('Failed to save settings', 'error');
+                showAlert('Update failed', 'error');
             }
         }
 
         async function clearConfig() {
-            if (confirm('Are you sure you want to clear all saved settings?')) {
+            if (confirm('Clear all saved settings?')) {
                 await fetch('/api/config', { method: 'DELETE' });
                 showAlert('Settings cleared', 'success');
                 setTimeout(() => location.reload(), 1000);
             }
         }
 
-        // Load current config on page load
         async function loadConfig() {
             try {
                 const response = await fetch('/api/config');
@@ -411,21 +365,10 @@
                     document.getElementById('server-url-login').value = config.server_url;
                     document.getElementById('server-url-apikey').value = config.server_url;
                 }
-
-                if (config.key_path) {
-                    document.getElementById('key-path').value = config.key_path;
-                }
-
-                if (config.key_type) {
-                    document.getElementById('key-type').value = config.key_type;
-                }
-
-                if (config.has_api_key) {
-                    document.getElementById('api-key').placeholder = '(saved securely)';
-                }
-            } catch (err) {
-                console.log('No saved config');
-            }
+                if (config.key_path) document.getElementById('key-path').value = config.key_path;
+                if (config.key_type) document.getElementById('key-type').value = config.key_type;
+                if (config.has_api_key) document.getElementById('api-key').placeholder = '(saved)';
+            } catch (err) {}
         }
 
         loadConfig();

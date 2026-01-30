@@ -44,10 +44,11 @@ var configPath string
 
 // PersistentConfig stores user settings
 type PersistentConfig struct {
-	ServerURL string `json:"server_url"`
-	APIKey    string `json:"api_key"`
-	KeyPath   string `json:"key_path"`
-	KeyType   string `json:"key_type"`
+	ServerURL   string   `json:"server_url"`
+	APIKey      string   `json:"api_key"`
+	KeyPath     string   `json:"key_path"`
+	KeyType     string   `json:"key_type"`
+	RecentHosts []string `json:"recent_hosts"`
 }
 
 func main() {
@@ -232,10 +233,16 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		expiryText = fmt.Sprintf("%v", time.Until(id.CertExpiry).Round(time.Minute))
 	}
 
+	// Load recent hosts
+	data, _ := os.ReadFile(configPath)
+	var pc PersistentConfig
+	json.Unmarshal(data, &pc)
+
 	json.NewEncoder(w).Encode(map[string]any{
 		"HasCert":     id.HasCert,
 		"Fingerprint": id.Fingerprint,
 		"ExpiryText":  expiryText,
+		"RecentHosts": pc.RecentHosts,
 	})
 }
 
@@ -254,6 +261,9 @@ func handleLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Add to recent hosts
+	addToRecent(host)
+
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
@@ -270,6 +280,28 @@ func handleLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte("Launched"))
+}
+
+func addToRecent(host string) {
+	data, _ := os.ReadFile(configPath)
+	var pc PersistentConfig
+	json.Unmarshal(data, &pc)
+
+	// Rebuild list with new host at top, removing duplicates
+	newHosts := []string{host}
+	for _, h := range pc.RecentHosts {
+		if h != host {
+			newHosts = append(newHosts, h)
+		}
+	}
+
+	// Limit to 5
+	if len(newHosts) > 5 {
+		newHosts = newHosts[:5]
+	}
+
+	pc.RecentHosts = newHosts
+	saveConfig(pc)
 }
 
 func handleConfig(w http.ResponseWriter, r *http.Request) {
