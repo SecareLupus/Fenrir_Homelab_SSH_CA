@@ -2,17 +2,17 @@
 
 ## Phase 22: Advanced Fleet Monitoring & Forensics
 
-- [ ] **Gleipnir Metrics**: Export Prometheus-compatible metrics from agents (Heartbeats, SSH connection counts, system load).
-- [ ] **Session Auditing**: Track active SSH sessions in the Fenrir dashboard via `journald` integration.
-- [ ] **Anomaly Detection**: Basic alerting engine for suspicious activity (e.g., brute-force cert requests).
-- [ ] **Global Search**: Unified search across Hosts, Users, and Audit Logs.
+- [x] **Gleipnir Metrics**: Export Prometheus-compatible metrics from agents (Heartbeats, SSH connection counts, system load).
+- [x] **Session Auditing**: Track active SSH sessions in the Fenrir dashboard via `journald` integration.
+- [x] **Anomaly Detection**: Basic alerting engine for suspicious activity (e.g., brute-force cert requests).
+- [x] **Global Search**: Unified search across Hosts, Users, and Audit Logs.
 
 ## Phase 23: Project Showcase (GitHub Pages)
 
-- [ ] **Marketing Landing Page**: High-quality landing page featuring Fenrir's capabilities.
-- [ ] **Visual Feature Tours**: screenshots/recordings showcasing Fenrir, Tyr, and Gleipnir.
-- [ ] **Value Proposition Branding**: Clear messaging for both "Homelab Simple" and "Small Business Powerful".
-- [ ] **Interactive Diagram**: Web-optimized architecture and trust flow visualization.
+- [x] **Marketing Landing Page**: High-quality landing page featuring Fenrir's capabilities.
+- [x] **Visual Feature Tours**: screenshots/recordings showcasing Fenrir, Tyr, and Gleipnir.
+- [x] **Value Proposition Branding**: Clear messaging for both "Homelab Simple" and "Small Business Powerful".
+- [x] **Interactive Diagram**: Web-optimized architecture and trust flow visualization.
 
 ## Phase 24: Mobile Ecosystem (Flutter)
 
