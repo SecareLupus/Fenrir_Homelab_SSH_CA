@@ -1,0 +1,43 @@
+name: Wiki Sync
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "wiki/**"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+
+      - name: Sync Wiki
+        env:
+          WIKI_REPO: https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+          # Clone the wiki repository
+          git clone $WIKI_REPO wiki_repo
+
+          # Copy the markdown files from the wiki/ folder in the main repo to the wiki repo
+          cp wiki/*.md wiki_repo/
+
+          cd wiki_repo
+
+          # Check if there are changes
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "Automated wiki sync from main repository"
+            git push origin master
+          else
+            echo "No changes to sync."
+          fi
