@@ -16,21 +16,23 @@ import (
 func TestApprovalWorkflow(t *testing.T) {
 	s := setupServer(t)
 	d := s.db
-	// 1. Setup: Create "sensitive" group
-	d.CreateGroup("sensitive", "High risk group")
-	d.Exec("UPDATE groups SET sudo_enabled = 1 WHERE name = 'sensitive'")
-	d.SetGroupApprovalRequired("sensitive", true)
 
-	// 2. Setup: Create user "alice" and "admin"
-	d.CreateUser("alice", "password")
-	d.CreateUser("admin", "adminpass")
-	d.Exec("UPDATE users SET role = 'admin' WHERE username = 'admin'")
+	// Ensure busy timeout for sqlite
+	d.Exec("PRAGMA busy_timeout = 5000")
+
+	// 1. Setup: Create "sensitive" group
+	d.Exec("INSERT OR IGNORE INTO groups (name, description) VALUES (?, ?)", "sensitive", "High risk group")
+	d.Exec("UPDATE groups SET sudo_enabled = 1, requires_approval = 1 WHERE name = 'sensitive'")
+
+	// 2. Setup: Create user "alice" and ensure enabled
+	d.Exec("INSERT OR IGNORE INTO users (username, password_hash, role, enabled) VALUES (?, ?, 'user', 1)", "alice", "pass", "user", 1)
+	d.SetUserEnabled("alice", true) // Double check
 
 	// Add Alice to sensitive group
 	var uid, gid int
 	d.QueryRow("SELECT id FROM users WHERE username = 'alice'").Scan(&uid)
 	d.QueryRow("SELECT id FROM groups WHERE name = 'sensitive'").Scan(&gid)
-	d.Exec("INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)", uid, gid)
+	d.Exec("INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?, ?)", uid, gid)
 
 	// Generate key for Alice
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
@@ -40,21 +42,7 @@ func TestApprovalWorkflow(t *testing.T) {
 	// 3. Alice requests "sensitive" principal
 	form := url.Values{}
 	form.Add("fingerprint", ssh.FingerprintSHA256(pub))
-	form.Add("type", "ssh-ed25519")
 	form.Add("pubkey", string(pubBytes))
-	// server.go: pubKeyStr := r.PostFormValue("key") || r.FormValue("public_key")
-	// Let's check server.go
-	// It reads pubKey from body/form?
-	// Step 1257 showed: pubKeyStr := ...? No, it showed logic AFTER parsing.
-	// "3. Register Key if new"
-	// Usually it reads from body or form.
-	// Assuming "key" field.
-
-	// Wait, earlier I saw: `pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.PublicKey))` in Approval Handler.
-	// But `handleCertRequest`?
-	// It calls `s.db.RegisterPublicKey`.
-	// Let's assume "key" is correct form value.
-
 	form.Add("principals", "alice,sensitive")
 
 	req := httptest.NewRequest("POST", "/cert/request", strings.NewReader(form.Encode()))

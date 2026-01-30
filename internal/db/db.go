@@ -52,6 +52,11 @@ func Init(path, webhookURL, encKey string) (*DB, error) {
 	if encKey != "" {
 		d.EncryptionKey = []byte(encKey)
 	}
+
+	// Pragmas for better concurrency and reliability
+	_, _ = db.Exec("PRAGMA busy_timeout = 5000")
+	_, _ = db.Exec("PRAGMA journal_mode = WAL")
+
 	if err := d.migrate(); err != nil {
 		d.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
