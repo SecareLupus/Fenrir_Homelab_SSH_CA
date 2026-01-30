@@ -5,6 +5,7 @@ gleipnir
 /tyr-gui
 bin/
 build/
+!build/windows/*.wxs
 .codex_scratch/
 *.so
 *.o
