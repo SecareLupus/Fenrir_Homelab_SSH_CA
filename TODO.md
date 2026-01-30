@@ -1,32 +1,31 @@
-# Fenrir SSH CA - Implementation Todo List (V3)
+# Fenrir SSH CA - Implementation Todo List (V4.2)
 
-## Phase 18: Tyr Client UX & Material Design 3
+## Phase 22: Advanced Fleet Monitoring & Forensics
 
-- [x] **Material Design 3 Implementation**: Transition from Glassmorphism to M3 aesthetics (System tokens, rounded components, M3 color palettes).
-- [x] **Modern Typography**: Implement Google Fonts (e.g., Robot, Inter, or Outfit) using M3 type scales.
-- [x] **Micro-animations**: Add smooth M3-style transitions and responsive surface interactions.
-- [x] **Dynamic Host Inventory**: Replace static hosts with a dynamic list tracking recent connections.
-- [x] **Connection Feedback**: Provide visual "Connecting..." states and launch success/failure notifications.
+- [ ] **Gleipnir Metrics**: Export Prometheus-compatible metrics from agents (Heartbeats, SSH connection counts, system load).
+- [ ] **Session Auditing**: Track active SSH sessions in the Fenrir dashboard via `journald` integration.
+- [ ] **Anomaly Detection**: Basic alerting engine for suspicious activity (e.g., brute-force cert requests).
+- [ ] **Global Search**: Unified search across Hosts, Users, and Audit Logs.
 
-## Phase 19: Desktop Integration & Native Window
+## Phase 23: Project Showcase (GitHub Pages)
 
-- [x] **Native Window Wrapper**: Move the GUI out of the browser into a dedicated native window (using Wails, Webview, or a lightweight wrapper).
-- [x] **Appindicator Attachment**: Attempt to implement a "floating" window behavior attached to the system tray/appindicator.
-- [x] **Native Desktop Notifications**: Implement system-level alerts for renewal success or FIDO touch requirements.
-- [x] **Enhanced Tray Menu**: Add "Recently Connected" hosts directly to the system tray for one-click access.
-- [x] **SSH Config Management**: Automatically manage `~/.ssh/config` to use CA certificates for specific hosts.
-- [x] **Global Hotkey**: Implement a customizable hotkey (e.g., `Ctrl+Shift+S`) to toggle the Tyr Quick Launch window.
+- [ ] **Marketing Landing Page**: High-quality landing page featuring Fenrir's capabilities.
+- [ ] **Visual Feature Tours**: screenshots/recordings showcasing Fenrir, Tyr, and Gleipnir.
+- [ ] **Value Proposition Branding**: Clear messaging for both "Homelab Simple" and "Small Business Powerful".
+- [ ] **Interactive Diagram**: Web-optimized architecture and trust flow visualization.
 
-## Phase 20: Security & Robustness Hardening
+## Phase 24: Mobile Ecosystem (Flutter)
 
-- [x] **Sensitive Data Security**: Move API keys from plaintext JSON to system-native keychains (Secret Service/Keychain/DPAPI).
-- [x] **Interactive Onboarding**: Implement a guided first-run experience for new users.
-- [x] **Real-time Status Updates**: Replace polling with WebSockets or SSE for instant GUI feedback.
-- [x] **Component-Based UI Refactor**: Modularize the frontend assets (e.g., using Alpine.js or Vite) to improve maintainability.
+- [ ] **Fleet Health Dashboard**: Real-time status and heartbeats in the mobile app.
+- [ ] **Remote Approvals**: Push notifications and UI for approving cert requests on the go.
+- [ ] **Mobile Audit Log**: Access to identity-based audit tails on mobile.
 
-## Phase 21: Documentation & CI/CD Hardening
+## Phase 25: Documentation & API Standardization
 
-- [x] **GitHub Wiki Migration**: Consolidate all project documentation into a structured Git-based wiki.
-- [x] **Tier 3 Deep Dive**: Create comprehensive setup and maintenance guides for air-gapped deployments.
-- [x] **Wiki Sync Automation**: Implement automated synchronization between the repo and the GitHub Wiki.
-- [x] **CI Stability**: Resolve database locking issues (WAL mode) and fix the Windows MSI installer pipeline.
+- [ ] **OpenAPI Specification**: Fully documented public REST API for scripts and third-party integrations.
+- [ ] **Automated CA Rotation**: Streamlined workflow for rotating Intermediate keys via the Root CA.
+- [ ] **Security Posture Dashboard**: "Health Check" page for outdated agents or weak policy configurations.
+
+## Phase 26: Open-Source IaC (OpenTofu)
+
+- [ ] **OpenTofu Provider**: Manage host inventory and principal policies as code using the new OpenAPI spec.
