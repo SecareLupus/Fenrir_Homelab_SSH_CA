@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fenrir | Advanced SSH Security for Fleet Operations</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container" style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+            <a href="#" class="logo">FENRIR</a>
+            <nav class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#how-it-works">Architecture</a>
+                <a href="https://github.com/SecareLupus/Homelab_SSH_CA" target="_blank">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <h1>Modern Security,<br>Unleashed.</h1>
+                <p>The Homelab SSH CA ecosystem that bridges the gap between simple setup and enterprise-grade security. Identity-based certificates for your entire fleet.</p>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <a href="https://github.com/SecareLupus/Homelab_SSH_CA" class="cta-button">View on GitHub</a>
+                    <a href="#features" class="cta-button" style="background: transparent; color: var(--md-sys-color-primary); border: 1px solid var(--md-sys-color-primary);">Explore Features</a>
+                </div>
+                <div style="margin-top: 4rem; width: 100%; max-width: 1000px; border-radius: 48px; overflow: hidden; box-shadow: 0 20px 80px rgba(0,0,0,0.5);">
+                    <img src="fenrir_hero_showcase.png" alt="Fenrir Hero" style="width: 100%; display: block;">
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="features">
+            <div class="container">
+                <h2 class="section-title">The Three Pillars of Fenrir</h2>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <div class="icon">🛡️</div>
+                        <h3>Fenrir (The Core)</h3>
+                        <p>The central orchestration layer. Handles WebAuthn/OIDC authentication, certificate signing, and fleet-wide monitoring via a premium administrative dashboard.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="icon">⚓</div>
+                        <h3>Gleipnir (The Agent)</h3>
+                        <p>An intelligent agent deployed on your hosts. Automatically manages certificate renewals, trust synchronization, and reports real-time metrics and audit events.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="icon">🦅</div>
+                        <h3>Tyr (The Client)</h3>
+                        <p>A unified CLI and GUI interface for staff members. Seamlessly integrates with SSH agents and handles identity-based authentication in seconds.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="how-it-works" class="architecture">
+            <div class="container">
+                <h2 class="section-title">Rooted in Trust</h2>
+                <p style="text-align: center; color: var(--md-sys-color-on-surface-variant); max-width: 800px; margin: 0 auto 3rem;">Fenrir follows a hierarchical certificate authority model, supporting everything from simple single-node setups to air-gapped Root CAs.</p>
+                
+                <div class="diagram-container">
+                    <pre class="mermaid">
+graph TD
+    RootCA["Root CA (Tier 3)"] -->|Signs| IntermediateCA["Fenrir Intermediate (Tier 2)"]
+    IntermediateCA -->|Issues Certs| GleipnirAgent["Gleipnir (Host)"]
+    IntermediateCA -->|Issues Certs| TyrClient["Tyr (Staff)"]
+    GleipnirAgent -->|Push Metrics| IntermediateCA
+    TyrClient -->|SSH via Cert| GleipnirAgent
+                    </pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="features" style="background: none;">
+            <div class="container">
+                <div class="feature-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="feature-card">
+                        <h3>Hardened by Default</h3>
+                        <p>Support for Physical Air-Gap (Tier 3), FIDO2/WebAuthn MFA, and Proof-of-Possession (PoP) based certificate renewal.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>Built for Scale</h3>
+                        <p>Push-based metrics reporting avoids NAT complexities. Real-time fleet health monitoring and automated anomaly detection for large-scale operations.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <div class="links">
+                <a href="#features">Features</a>
+                <a href="#how-it-works">Architecture</a>
+                <a href="https://github.com/SecareLupus/Homelab_SSH_CA">GitHub</a>
+            </div>
+            <p>© 2026 SecareLupus. Open source under the GPL-3.0 License.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    </script>
+</body>
+</html>

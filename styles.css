@@ -1,0 +1,210 @@
+:root {
+  /* MD3 Dark Theme Palette */
+  --md-sys-color-primary: #a8c7ff;
+  --md-sys-color-on-primary: #003062;
+  --md-sys-color-primary-container: #00468a;
+  --md-sys-color-on-primary-container: #d6e3ff;
+  --md-sys-color-secondary: #bec6dc;
+  --md-sys-color-on-secondary: #283041;
+  --md-sys-color-surface: #1a1c1e;
+  --md-sys-color-on-surface: #e2e2e6;
+  --md-sys-color-surface-variant: #44474e;
+  --md-sys-color-on-surface-variant: #c4c6d0;
+  --md-sys-color-outline: #8e9099;
+  --md-sys-color-background: #1a1c1e;
+  --md-sys-color-surface-container: #1e2022;
+  --md-sys-color-surface-container-high: #282a2d;
+
+  --font-heading: "Outfit", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--md-sys-color-background);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+  color: var(--md-sys-color-on-surface);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+/* Header */
+header {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  background-color: rgba(26, 28, 30, 0.8);
+  backdrop-filter: blur(10px);
+  z-index: 1000;
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--md-sys-color-primary);
+  text-decoration: none;
+  letter-spacing: -1px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 2rem;
+}
+
+.nav-links a {
+  color: var(--md-sys-color-on-surface-variant);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.3s;
+}
+
+.nav-links a:hover {
+  color: var(--md-sys-color-primary);
+}
+
+/* Hero Section */
+.hero {
+  padding: 160px 0 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-height: 80vh;
+}
+
+.hero h1 {
+  font-size: 4.5rem;
+  line-height: 1.1;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, #d6e3ff, #a8c7ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero p {
+  font-size: 1.5rem;
+  color: var(--md-sys-color-on-surface-variant);
+  max-width: 800px;
+  margin-bottom: 2.5rem;
+}
+
+.cta-button {
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  padding: 1rem 2.5rem;
+  border-radius: 28px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1.1rem;
+  transition:
+    transform 0.3s,
+    box-shadow 0.3s;
+}
+
+.cta-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 20px rgba(168, 199, 255, 0.3);
+}
+
+/* Features */
+.features {
+  padding: 100px 0;
+}
+
+.section-title {
+  text-align: center;
+  font-size: 2.5rem;
+  margin-bottom: 4rem;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+}
+
+.feature-card {
+  background-color: var(--md-sys-color-surface-container);
+  border-radius: 32px;
+  padding: 2.5rem;
+  transition: background-color 0.3s;
+  border: 1px solid transparent;
+}
+
+.feature-card:hover {
+  background-color: var(--md-sys-color-surface-container-high);
+  border-color: var(--md-sys-color-outline);
+}
+
+.feature-card .icon {
+  font-size: 2.5rem;
+  color: var(--md-sys-color-primary);
+  margin-bottom: 1.5rem;
+}
+
+.feature-card h3 {
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+}
+
+.feature-card p {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Architecture Section */
+.architecture {
+  padding: 100px 0;
+  background-color: var(--md-sys-color-surface-container-high);
+  border-radius: 48px;
+  margin: 4rem 0;
+}
+
+.diagram-container {
+  margin-top: 3rem;
+  padding: 2rem;
+  background: #000;
+  border-radius: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+/* Footer */
+footer {
+  padding: 4rem 0;
+  border-top: 1px solid var(--md-sys-color-outline);
+  text-align: center;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+footer .links {
+  margin-bottom: 2rem;
+}
+
+footer .links a {
+  margin: 0 1rem;
+  color: var(--md-sys-color-on-surface-variant);
+  text-decoration: none;
+}
