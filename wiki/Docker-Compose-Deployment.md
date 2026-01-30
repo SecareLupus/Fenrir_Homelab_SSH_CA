@@ -28,6 +28,7 @@ Root and Intermediate CAs are separated. The Root container is only started when
 Maximum security with a physically air-gapped Root CA.
 
 - **Location**: `deploy/tier-3-isolated/`
+- **[Full Setup & Maintenance Guide](Tier-3-Isolated-Root-Setup)**: In-depth instructions for bootstrapping, synchronization, and emergency revocation.
 
 ---
 

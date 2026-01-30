@@ -23,3 +23,10 @@
 - [x] **Interactive Onboarding**: Implement a guided first-run experience for new users.
 - [x] **Real-time Status Updates**: Replace polling with WebSockets or SSE for instant GUI feedback.
 - [x] **Component-Based UI Refactor**: Modularize the frontend assets (e.g., using Alpine.js or Vite) to improve maintainability.
+
+## Phase 21: Documentation & CI/CD Hardening
+
+- [x] **GitHub Wiki Migration**: Consolidate all project documentation into a structured Git-based wiki.
+- [x] **Tier 3 Deep Dive**: Create comprehensive setup and maintenance guides for air-gapped deployments.
+- [x] **Wiki Sync Automation**: Implement automated synchronization between the repo and the GitHub Wiki.
+- [x] **CI Stability**: Resolve database locking issues (WAL mode) and fix the Windows MSI installer pipeline.
