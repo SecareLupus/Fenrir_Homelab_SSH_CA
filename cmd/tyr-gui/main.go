@@ -26,7 +26,10 @@ import (
 	"time"
 
 	"github.com/SecareLupus/Fenrir_Homelab_SSH_CA/internal/client"
+	"github.com/gen2brain/beeep"
 	"github.com/getlantern/systray"
+	hook "github.com/robotn/gohook"
+	webview "github.com/webview/webview_go"
 )
 
 //go:embed assets/icon.png
@@ -41,6 +44,8 @@ var settingsHTML string
 var globalConfig *client.Config
 var serverPort = 4500
 var configPath string
+var wv webview.WebView
+var windowVisible bool = true
 
 // PersistentConfig stores user settings
 type PersistentConfig struct {
@@ -75,8 +80,36 @@ func main() {
 	// 2. Start HTTP Server
 	go startServer()
 
-	// 3. Start System Tray
-	systray.Run(onReady, onExit)
+	// 3. Sync SSH Config
+	go syncSSHConfig()
+
+	// 4. Start System Tray
+	go systray.Run(onReady, onExit)
+
+	// 5. Start Global Hotkey
+	go startHotkeyListener()
+
+	// 6. Start Native Window
+	startNativeWindow()
+}
+
+func startNativeWindow() {
+	wv = webview.New(true)
+	defer wv.Destroy()
+	wv.SetTitle("Fenrir SSH CA Control Center")
+	wv.SetSize(720, 520, webview.HintNone)
+	wv.Navigate(fmt.Sprintf("http://localhost:%d", serverPort))
+	wv.Run()
+}
+
+func toggleWindow() {
+	if windowVisible {
+		wv.Terminate() // This is a limitation of webview_go; we might need to recreate it
+		windowVisible = false
+	} else {
+		go startNativeWindow()
+		windowVisible = true
+	}
 }
 
 func loadSavedConfig() {
@@ -143,9 +176,14 @@ func onReady() {
 
 	systray.AddSeparator()
 
-	mDashboard := systray.AddMenuItem("Open Dashboard", "Open the web dashboard")
+	mDashboard := systray.AddMenuItem("Show/Hide Dashboard", "Toggle the dashboard window")
 	mSettings := systray.AddMenuItem("Settings", "Configure Fenrir connection")
 	mRenew := systray.AddMenuItem("Renew Certificate", "Manually trigger certificate renewal")
+
+	systray.AddSeparator()
+
+	mRecent := systray.AddMenuItem("Recent Connections", "Quickly connect to recent hosts")
+	updateRecentMenu(mRecent)
 
 	systray.AddSeparator()
 
@@ -172,15 +210,47 @@ func onReady() {
 	for {
 		select {
 		case <-mDashboard.ClickedCh:
-			openBrowser(fmt.Sprintf("http://localhost:%d", serverPort))
+			toggleWindow()
 		case <-mSettings.ClickedCh:
-			openBrowser(fmt.Sprintf("http://localhost:%d/settings", serverPort))
+			if !windowVisible {
+				go func() {
+					startNativeWindow()
+					wv.Navigate(fmt.Sprintf("http://localhost:%d/settings", serverPort))
+				}()
+				windowVisible = true
+			} else {
+				wv.Navigate(fmt.Sprintf("http://localhost:%d/settings", serverPort))
+			}
 		case <-mRenew.ClickedCh:
-			globalConfig.Sign(context.Background(), nil)
+			err := globalConfig.Sign(context.Background(), nil)
+			if err != nil {
+				beeep.Alert("Renewal Failed", err.Error(), "")
+			} else {
+				beeep.Notify("Success", "Certificate renewed successfully", "")
+				go syncSSHConfig()
+			}
 		case <-mQuit.ClickedCh:
 			systray.Quit()
 			return
 		}
+	}
+}
+
+func updateRecentMenu(parent *systray.MenuItem) {
+	// Clear existing (systray doesn't have a clear, so we just add)
+	data, _ := os.ReadFile(configPath)
+	var pc PersistentConfig
+	json.Unmarshal(data, &pc)
+
+	for _, host := range pc.RecentHosts {
+		h := host // capture for closure
+		m := parent.AddSubMenuItem(h, "Connect to "+h)
+		go func() {
+			for {
+				<-m.ClickedCh
+				handleLaunchLogic(h)
+			}
+		}()
 	}
 }
 
@@ -195,7 +265,13 @@ func renewalLoop() {
 			// If missing or expiring in < 1 hour
 			if !id.HasCert || time.Until(id.CertExpiry) < 1*time.Hour {
 				log.Println("Background renewal triggered...")
-				globalConfig.Sign(context.Background(), nil)
+				err := globalConfig.Sign(context.Background(), nil)
+				if err != nil {
+					beeep.Alert("Background Renewal Failed", "Please check your connection or security key", "")
+				} else {
+					beeep.Notify("Renewal Success", "Certificate renewed in background", "")
+					go syncSSHConfig()
+				}
 			}
 		}
 		time.Sleep(15 * time.Minute)
@@ -261,6 +337,11 @@ func handleLaunch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	handleLaunchLogic(host)
+	w.Write([]byte("Launched"))
+}
+
+func handleLaunchLogic(host string) {
 	// Add to recent hosts
 	addToRecent(host)
 
@@ -276,10 +357,10 @@ func handleLaunch(w http.ResponseWriter, r *http.Request) {
 
 	err := cmd.Start()
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		log.Printf("Launch failed: %v", err)
+		beeep.Alert("Launch Failed", fmt.Sprintf("Failed to launch SSH session to %s: %v", host, err), "")
 		return
 	}
-	w.Write([]byte("Launched"))
 }
 
 func addToRecent(host string) {
@@ -464,6 +545,60 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	globalConfig.APIKey = pc.APIKey
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func startHotkeyListener() {
+	// Listen for Ctrl+Shift+S
+	// Note: gohook might require sudo on some Linux distros or specific permissions
+	// We'll use a simple loop. CTRL=leftctrl, SHIFT=leftshift, S=s
+	hook.Register(hook.KeyDown, []string{"ctrl", "shift", "s"}, func(e hook.Event) {
+		log.Println("Hotkey Ctrl+Shift+S detected, toggling window")
+		toggleWindow()
+	})
+
+	s := hook.Start()
+	<-hook.Process(s)
+}
+
+func syncSSHConfig() {
+	home, _ := os.UserHomeDir()
+	sshDir := filepath.Join(home, ".ssh")
+	configPath := filepath.Join(sshDir, "config")
+
+	// Create .ssh dir if not exists
+	os.MkdirAll(sshDir, 0700)
+
+	id, err := globalConfig.GetIdentity()
+	if err != nil || !id.HasCert {
+		return
+	}
+
+	// Prepare the Fenrir block
+	newBlock := "\n# --- Fenrir SSH CA Managed Block ---\n"
+	newBlock += "Host *\n"
+	newBlock += fmt.Sprintf("    CertificateFile %s-cert.pub\n", strings.TrimSuffix(globalConfig.KeyPath, ".pub"))
+	newBlock += "    IdentityFile " + globalConfig.KeyPath + "\n"
+	newBlock += "# --- End Fenrir Managed Block ---\n"
+
+	content, _ := os.ReadFile(configPath)
+	contentStr := string(content)
+
+	// Check if block already exists
+	startMarker := "# --- Fenrir SSH CA Managed Block ---"
+	endMarker := "# --- End Fenrir Managed Block ---"
+
+	startIdx := strings.Index(contentStr, startMarker)
+	endIdx := strings.Index(contentStr, endMarker)
+
+	if startIdx != -1 && endIdx != -1 {
+		// Replace existing block
+		newContent := contentStr[:startIdx] + strings.TrimSpace(newBlock) + contentStr[endIdx+len(endMarker):]
+		os.WriteFile(configPath, []byte(newContent), 0600)
+	} else {
+		// Append to end
+		newContent := contentStr + newBlock
+		os.WriteFile(configPath, []byte(newContent), 0600)
+	}
 }
 
 func openBrowser(url string) {

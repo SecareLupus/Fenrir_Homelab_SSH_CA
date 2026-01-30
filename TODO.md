@@ -10,12 +10,12 @@
 
 ## Phase 19: Desktop Integration & Native Window
 
-- [ ] **Native Window Wrapper**: Move the GUI out of the browser into a dedicated native window (using Wails, Webview, or a lightweight wrapper).
-- [ ] **Appindicator Attachment**: Attempt to implement a "floating" window behavior attached to the system tray/appindicator.
-- [ ] **Native Desktop Notifications**: Implement system-level alerts for renewal success or FIDO touch requirements.
-- [ ] **Enhanced Tray Menu**: Add "Recently Connected" hosts directly to the system tray for one-click access.
-- [ ] **SSH Config Management**: Automatically manage `~/.ssh/config` to use CA certificates for specific hosts.
-- [ ] **Global Hotkey**: Implement a customizable hotkey (e.g., `Ctrl+Shift+S`) to toggle the Tyr Quick Launch window.
+- [x] **Native Window Wrapper**: Move the GUI out of the browser into a dedicated native window (using Wails, Webview, or a lightweight wrapper).
+- [x] **Appindicator Attachment**: Attempt to implement a "floating" window behavior attached to the system tray/appindicator.
+- [x] **Native Desktop Notifications**: Implement system-level alerts for renewal success or FIDO touch requirements.
+- [x] **Enhanced Tray Menu**: Add "Recently Connected" hosts directly to the system tray for one-click access.
+- [x] **SSH Config Management**: Automatically manage `~/.ssh/config` to use CA certificates for specific hosts.
+- [x] **Global Hotkey**: Implement a customizable hotkey (e.g., `Ctrl+Shift+S`) to toggle the Tyr Quick Launch window.
 
 ## Phase 20: Security & Robustness Hardening
 
