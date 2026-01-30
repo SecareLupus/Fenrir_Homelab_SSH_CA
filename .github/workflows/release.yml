@@ -119,12 +119,23 @@ jobs:
             libayatana-appindicator3-dev \
             libglib2.0-dev \
             libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libx11-dev \
+            libxtst-dev \
+            libx11-xcb-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
             libpam0g-dev \
             gcc-aarch64-linux-gnu \
             gcc-mingw-w64 \
             pkg-config \
             libp11-kit-dev \
             libp11-kit-dev:arm64
+
+          # Shim webkit2gtk-4.0 to 4.1 for webview_go
+          if [ -f /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc ]; then
+            sudo cp /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc
+          fi
 
       - name: Build Binaries
         run: |
@@ -207,8 +218,9 @@ jobs:
       - name: Build MSI Installer
         shell: cmd
         run: |
-          "%WIX%bin\candle.exe" build\windows\installer.wxs -out dist\installer.wixobj
-          "%WIX%bin\light.exe" dist\installer.wixobj -out dist\tyr-setup.msi -ext WixUIExtension
+          if not exist dist mkdir dist
+          "%WIX%bin\candle.exe" build/windows/installer.wxs -out dist/installer.wixobj
+          "%WIX%bin\light.exe" dist/installer.wixobj -out dist/tyr-setup.msi -ext WixUIExtension
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
