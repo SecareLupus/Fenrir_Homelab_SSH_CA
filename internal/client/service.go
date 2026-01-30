@@ -39,6 +39,7 @@ type Config struct {
 type Identity struct {
 	Config      *Config
 	HasCert     bool
+	CAOnline    bool
 	CertExpiry  time.Time
 	Fingerprint string
 }
@@ -81,6 +82,21 @@ func (c *Config) GetIdentity() (*Identity, error) {
 				id.HasCert = true
 				id.CertExpiry = time.Unix(int64(cert.ValidBefore), 0)
 			}
+		}
+	}
+
+	// 4. Check CA Connectivity
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(c.CAURL + "/health")
+	if err == nil {
+		id.CAOnline = resp.StatusCode == http.StatusOK
+		resp.Body.Close()
+	} else {
+		// Try a basic HEAD if health endpoint isn't there
+		resp, err = client.Head(c.CAURL)
+		if err == nil {
+			id.CAOnline = true
+			resp.Body.Close()
 		}
 	}
 

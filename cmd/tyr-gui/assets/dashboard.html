@@ -47,33 +47,39 @@
         }
 
         .container {
-            width: 720px;
-            height: 480px;
+            width: 95%;
+            max-width: 660px;
+            height: 95%;
+            max-height: 480px;
             background: var(--md-sys-color-surface);
             border: 1px solid var(--md-sys-color-outline);
             border-radius: 28px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
             display: flex;
-            padding: 2rem;
-            gap: 2rem;
+            padding: 1.5rem;
+            gap: 1.5rem;
             position: relative;
+            overflow: hidden;
         }
 
         .card-left {
-            flex: 1.2;
+            flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 1.5rem;
+            gap: 1.25rem;
+            min-width: 260px;
         }
 
         .card-right {
-            flex: 1;
+            flex: 1.2;
             background: var(--md-sys-color-secondary-container);
             border-radius: 16px;
-            padding: 1.5rem;
+            padding: 0; /* Flush scrollbar */
             display: flex;
             flex-direction: column;
             color: var(--md-sys-color-on-secondary-container);
+            min-width: 260px;
+            overflow: hidden; /* Mask the inner scrollbar */
         }
 
         h2 { margin: 0; font-size: 1.5rem; font-weight: 500; }
@@ -191,6 +197,22 @@
         }
 
         [x-cloak] { display: none !important; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--md-sys-color-primary-container);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--md-sys-color-primary);
+        }
     </style>
 </head>
 
@@ -198,17 +220,23 @@
     <div class="container">
         <div class="card-left">
             <h2>Identity Status</h2>
-            <div>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
                 <div class="status-badge" 
                      :style="hasCert ? 'background: var(--md-sys-color-primary-container)' : 'background: rgba(242, 184, 181, 0.15)'">
                     <span class="status-dot" :style="hasCert ? 'background: var(--md-sys-color-success)' : 'background: var(--md-sys-color-error)'"></span>
                     <span x-text="hasCert ? 'Certified' : 'Unauthorized'"></span>
                 </div>
+
+                <div class="status-badge" 
+                     :style="caOnline ? 'background: rgba(180, 225, 181, 0.15)' : 'background: rgba(242, 184, 181, 0.15)'">
+                    <span class="status-dot" :style="caOnline ? 'background: var(--md-sys-color-success)' : 'background: var(--md-sys-color-error)'"></span>
+                    <span x-text="caOnline ? 'CA Online' : 'CA Offline'"></span>
+                </div>
             </div>
 
             <div class="info-group">
                 <span class="info-label">Issued To</span>
-                <span class="info-value" x-text="fingerprint || 'Unknown'"></span>
+                <span class="info-value" x-text="fingerprint || 'Unknown'" :title="fingerprint"></span>
             </div>
 
             <div class="info-group">
@@ -229,23 +257,27 @@
         </div>
 
         <div class="card-right">
-            <h2 style="font-size: 1.25rem;">Quick Connect</h2>
-            <p style="font-size: 0.8rem; opacity: 0.8; margin: 0.5rem 0 1.5rem 0;">
-                Launch a cert-authenticated session.
-            </p>
-            <div class="quick-launch-container">
-                <input type="text" class="quick-launch-input" placeholder="hostname or IP" x-model="hostSearch" @keypress.enter="quickConnect()">
-                <button class="launch-btn" @click="quickConnect()">Launch</button>
+            <div style="padding: 1.5rem 1.5rem 0.5rem 1.5rem;">
+                <h2 style="font-size: 1.25rem;">Quick Connect</h2>
+                <p style="font-size: 0.8rem; opacity: 0.8; margin: 0.5rem 0 1.25rem 0;">
+                    Launch a cert-authenticated session.
+                </p>
+                <div class="quick-launch-container">
+                    <input type="text" class="quick-launch-input" placeholder="hostname or IP" x-model="hostSearch" @keypress.enter="quickConnect()">
+                    <button class="launch-btn" @click="quickConnect()">Launch</button>
+                </div>
             </div>
 
-            <div class="host-list">
-                <div class="info-label" style="margin-bottom: 0.5rem;">Recent Hosts</div>
-                <template x-for="host in recentHosts" :key="host">
-                    <div class="host-item" @click="hostSearch = host; quickConnect()">
-                        <span class="host-icon">🖥️</span>
-                        <span x-text="host"></span>
-                    </div>
-                </template>
+            <div class="host-list" style="overflow-y: auto; flex: 1;">
+                <div style="padding: 0.5rem 1.5rem 1.5rem 1.5rem; padding-right: 1.2rem;">
+                    <div class="info-label" style="margin-bottom: 0.75rem;">Recent Connections</div>
+                    <template x-for="host in recentHosts" :key="host">
+                        <div class="host-item" @click="hostSearch = host; quickConnect()">
+                            <span class="host-icon">🖥️</span>
+                            <span x-text="host"></span>
+                        </div>
+                    </template>
+                </div>
             </div>
         </div>
 
@@ -260,6 +292,7 @@
         function app() {
             return {
                 hasCert: false,
+                caOnline: false,
                 fingerprint: '',
                 expiryText: '...',
                 recentHosts: [],
@@ -289,6 +322,7 @@
                         const resp = await fetch('/api/status');
                         const data = await resp.json();
                         this.hasCert = data.HasCert;
+                        this.caOnline = data.CAOnline;
                         this.fingerprint = data.Fingerprint;
                         this.expiryText = data.ExpiryText;
                         this.recentHosts = data.RecentHosts || [];

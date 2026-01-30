@@ -45,9 +45,10 @@ var settingsHTML string
 var globalConfig *client.Config
 var serverPort = 4500
 var configPath string
-var wv webview.WebView
-var windowVisible bool = false
-var showWindowChan = make(chan string, 1)
+var wv webview.WebView // only used in window mode
+var windowVisible bool // defunct in manager mode
+var mRecent *systray.MenuItem
+var mRecentSlots [5]*systray.MenuItem
 
 // SSE support
 type sseClient chan string
@@ -73,7 +74,27 @@ func init() {
 	runtime.LockOSThread()
 }
 
+var windowFlag bool
+
 func main() {
+	// 0. Parse flags
+	for _, arg := range os.Args {
+		if arg == "--window" {
+			windowFlag = true
+		}
+	}
+
+	if windowFlag {
+		log.Println("[TYR-GUI] Starting in WINDOW mode")
+		runWindowMode()
+		return
+	}
+
+	log.Println("[TYR-GUI] Starting in MANAGER mode")
+	runManagerMode()
+}
+
+func runManagerMode() {
 	// Determine config file path
 	home, _ := os.UserHomeDir()
 	configPath = filepath.Join(home, ".tyr-gui-config.json")
@@ -91,56 +112,60 @@ func main() {
 		}
 	}
 
-	// 1. Start auxiliary services early
+	// 1. Start auxiliary services
 	go sseManager()
 	go renewalLoop()
 	go startServer()
 	go syncSSHConfig()
 	go startHotkeyListener()
 
-	// 2. Initial window signal
-	showWindowChan <- fmt.Sprintf("http://localhost:%d", serverPort)
+	// 2. Initial window spawn
+	go spawnWindow(fmt.Sprintf("http://localhost:%d", serverPort))
 
-	// 3. Persistent Loop for WebUI (Main Thread)
-	firstRun := true
-	for {
-		targetURL := <-showWindowChan
-		if targetURL == "" {
-			continue
+	// 3. Start System Tray (this owns the main thread on Linux)
+	systray.Run(onReady, onExit)
+}
+
+func runWindowMode() {
+	// Window mode is a short-lived process that just shows the UI
+	targetURL := ""
+	for i, arg := range os.Args {
+		if arg == "--url" && i+1 < len(os.Args) {
+			targetURL = os.Args[i+1]
 		}
+	}
+	if targetURL == "" {
+		targetURL = fmt.Sprintf("http://localhost:%d", serverPort)
+	}
 
-		// Initialize WebUI
-		wv = webview.New(true)
-		wv.SetTitle("Fenrir SSH CA Control Center")
-		wv.SetSize(720, 520, webview.HintNone)
-		wv.Navigate(targetURL)
+	w := webview.New(true)
+	defer w.Destroy()
+	w.SetTitle("Fenrir SSH CA Control Center")
+	w.SetSize(720, 520, webview.HintNone)
+	w.Navigate(targetURL)
+	w.Run()
+}
 
-		if firstRun {
-			// Start System Tray once GTK is initialized by Webview
-			go systray.Run(onReady, onExit)
-			firstRun = false
-		}
+func spawnWindow(url string) {
+	exe, err := os.Executable()
+	if err != nil {
+		log.Printf("[MANAGER] Failed to get executable path: %v", err)
+		return
+	}
 
-		windowVisible = true
-		wv.Run()
-		wv.Destroy()
-		wv = nil
-		windowVisible = false
-
-		// After wv.Run() exits (window closed), the loop waits for showWindowChan again.
-		// This keeps the process alive and allows the tray to stay responsive.
-		log.Println("Window closed, staying alive in tray...")
+	log.Printf("[MANAGER] Spawning window process for URL: %s", url)
+	cmd := exec.Command(exe, "--window", "--url", url)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Start()
+	if err != nil {
+		log.Printf("[MANAGER] Failed to spawn window process: %v", err)
 	}
 }
 
 func toggleWindow() {
-	if windowVisible {
-		wv.Dispatch(func() {
-			wv.Terminate()
-		})
-	} else {
-		showWindowChan <- fmt.Sprintf("http://localhost:%d", serverPort)
-	}
+	// In multi-process mode, "toggling" always means spawning a new window
+	spawnWindow(fmt.Sprintf("http://localhost:%d", serverPort))
 }
 
 func loadSavedConfig() {
@@ -240,8 +265,13 @@ func onReady() {
 
 	systray.AddSeparator()
 
-	mRecent := systray.AddMenuItem("Recent Connections", "Quickly connect to recent hosts")
-	updateRecentMenu(mRecent)
+	mRecent = systray.AddMenuItem("Recent Connections", "Quickly connect to recent hosts")
+	for i := 0; i < 5; i++ {
+		mRecentSlots[i] = mRecent.AddSubMenuItem("", "")
+		mRecentSlots[i].Hide()
+	}
+	initRecentSlots() // Start the listeners AFTER slots are created
+	updateRecentMenu()
 
 	systray.AddSeparator()
 
@@ -252,12 +282,15 @@ func onReady() {
 		for {
 			id, err := globalConfig.GetIdentity()
 			if err == nil {
+				statusText := "Unauthorized"
 				if id.HasCert {
 					remaining := time.Until(id.CertExpiry).Round(time.Minute)
-					mStatus.SetTitle(fmt.Sprintf("Status: Certified (%v)", remaining))
-				} else {
-					mStatus.SetTitle("Status: Unauthorized")
+					statusText = fmt.Sprintf("Certified (%v)", remaining)
 				}
+				if !id.CAOnline {
+					statusText += " [CA Offline]"
+				}
+				mStatus.SetTitle("Status: " + statusText)
 			} else {
 				mStatus.SetTitle("Status: Error")
 			}
@@ -270,13 +303,7 @@ func onReady() {
 		case <-mDashboard.ClickedCh:
 			toggleWindow()
 		case <-mSettings.ClickedCh:
-			if !windowVisible {
-				showWindowChan <- fmt.Sprintf("http://localhost:%d/settings", serverPort)
-			} else {
-				wv.Dispatch(func() {
-					wv.Navigate(fmt.Sprintf("http://localhost:%d/settings", serverPort))
-				})
-			}
+			spawnWindow(fmt.Sprintf("http://localhost:%d/settings", serverPort))
 		case <-mRenew.ClickedCh:
 			err := globalConfig.Sign(context.Background(), nil)
 			if err != nil {
@@ -294,19 +321,57 @@ func onReady() {
 	}
 }
 
-func updateRecentMenu(parent *systray.MenuItem) {
-	// Clear existing (systray doesn't have a clear, so we just add)
+func updateRecentMenu() {
+	if mRecent == nil {
+		return
+	}
+
 	data, _ := os.ReadFile(configPath)
 	var pc PersistentConfig
 	json.Unmarshal(data, &pc)
 
-	for _, host := range pc.RecentHosts {
-		h := host // capture for closure
-		m := parent.AddSubMenuItem(h, "Connect to "+h)
+	if len(pc.RecentHosts) == 0 {
+		mRecent.SetTitle("Recent Connections (None)")
+		for _, m := range mRecentSlots {
+			m.Hide()
+		}
+		return
+	}
+
+	mRecent.SetTitle("Recent Connections")
+	for i := 0; i < 5; i++ {
+		if i < len(pc.RecentHosts) {
+			host := pc.RecentHosts[i]
+			mRecentSlots[i].SetTitle(host)
+			mRecentSlots[i].SetTooltip("Connect to " + host)
+			mRecentSlots[i].Show()
+
+			// Re-bind click handler (Note: this might leak goroutines if not careful,
+			// but we use a single purpose receiver)
+			// For simplicity in this env, we'll just check if it's already bound?
+			// Actually, systray.MenuItem is a handle. We'll use a signal channel.
+			// BUT: ClickedCh is a channel that stays open.
+			// Better: have a dedicated goroutine for each slot that reads its ClickedCh.
+		} else {
+			mRecentSlots[i].Hide()
+		}
+	}
+}
+
+// Initial setup for slot listeners
+func initRecentSlots() {
+	for i := 0; i < 5; i++ {
+		slotIdx := i
 		go func() {
 			for {
-				<-m.ClickedCh
-				handleLaunchLogic(h)
+				<-mRecentSlots[slotIdx].ClickedCh
+				// Re-load config to find the host at this index
+				data, _ := os.ReadFile(configPath)
+				var pc PersistentConfig
+				json.Unmarshal(data, &pc)
+				if slotIdx < len(pc.RecentHosts) {
+					handleLaunchLogic(pc.RecentHosts[slotIdx])
+				}
 			}
 		}()
 	}
@@ -412,6 +477,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]any{
 		"HasCert":     id.HasCert,
+		"CAOnline":    id.CAOnline,
 		"Fingerprint": id.Fingerprint,
 		"ExpiryText":  expiryText,
 		"RecentHosts": pc.RecentHosts,
@@ -481,6 +547,7 @@ func addToRecent(host string) {
 
 	pc.RecentHosts = newHosts
 	saveConfig(pc)
+	updateRecentMenu()
 }
 
 func handleConfig(w http.ResponseWriter, r *http.Request) {

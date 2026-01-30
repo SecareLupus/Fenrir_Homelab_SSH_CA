@@ -47,13 +47,17 @@
         }
 
         .container {
-            width: 600px;
+            width: 95%;
+            max-width: 600px;
+            height: 95%;
+            max-height: 480px;
             background: var(--md-sys-color-surface);
             border: 1px solid var(--md-sys-color-outline);
             border-radius: 28px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-            padding: 2.5rem;
+            padding: 0; /* Remove padding to let scrollbar reach the edge */
             position: relative;
+            overflow: hidden; /* Mask the inner scrollbar with the border radius */
         }
 
         h2 { margin: 0 0 2rem 0; font-size: 1.75rem; font-weight: 400; }
@@ -151,122 +155,140 @@
         .step-dot.active { background: var(--md-sys-color-primary); }
 
         [x-cloak] { display: none !important; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--md-sys-color-primary-container);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--md-sys-color-primary);
+        }
     </style>
 </head>
 
 <body x-data="settings()" x-init="init()">
-    <div class="container">
-        <a href="/" class="back-link" x-show="!onboarding">← Dashboard</a>
-        <h2 x-text="onboarding ? 'Getting Started' : 'Settings'"></h2>
+    <div class="container" style="overflow: hidden;">
+        <div class="content-wrapper" style="overflow-y: auto; height: 100%;">
+            <div style="padding: 2.5rem; padding-bottom: 3.5rem;">
+                <a href="/" class="back-link" x-show="!onboarding">← Dashboard</a>
+                <h2 x-text="onboarding ? 'Getting Started' : 'Settings'"></h2>
 
-        <template x-if="alert.message">
-            <div class="alert" :class="'alert-' + alert.type" x-text="alert.message"></div>
-        </template>
+            <template x-if="alert.message">
+                <div class="alert" :class="'alert-' + alert.type" x-text="alert.message"></div>
+            </template>
 
-        <!-- Main Settings UI -->
-        <div x-show="!onboarding" x-cloak>
-            <div class="tabs">
-                <div class="tab" :class="activeTab === 'login' ? 'active' : ''" @click="activeTab = 'login'">Login</div>
-                <div class="tab" :class="activeTab === 'apikey' ? 'active' : ''" @click="activeTab = 'apikey'">API Key</div>
-                <div class="tab" :class="activeTab === 'advanced' ? 'active' : ''" @click="activeTab = 'advanced'">Advanced</div>
-            </div>
+            <!-- Main Settings UI -->
+            <div x-show="!onboarding" x-cloak>
+                <div class="tabs">
+                    <div class="tab" :class="activeTab === 'login' ? 'active' : ''" @click="activeTab = 'login'">Login</div>
+                    <div class="tab" :class="activeTab === 'apikey' ? 'active' : ''" @click="activeTab = 'apikey'">API Key</div>
+                    <div class="tab" :class="activeTab === 'advanced' ? 'active' : ''" @click="activeTab = 'advanced'">Advanced</div>
+                </div>
 
-            <div class="tab-content" x-show="activeTab === 'login'">
-                <div class="form-group">
-                    <label>Fenrir Server URL</label>
-                    <input type="text" x-model="config.server_url">
-                </div>
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" x-model="login.username" placeholder="alice">
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" x-model="login.password" placeholder="••••••••">
-                </div>
-                <div x-show="login.mfaRequired" x-cloak>
+                <div class="tab-content" x-show="activeTab === 'login'">
                     <div class="form-group">
-                        <label>MFA Code</label>
-                        <input type="text" x-model="login.mfaCode" placeholder="123456">
+                        <label>Fenrir Server URL</label>
+                        <input type="text" x-model="config.server_url">
                     </div>
-                </div>
-                <button class="btn" @click="doLogin()">Authenticate</button>
-            </div>
-
-            <div class="tab-content" x-show="activeTab === 'apikey'">
-                <div class="form-group">
-                    <label>Fenrir Server URL</label>
-                    <input type="text" x-model="config.server_url">
-                </div>
-                <div class="form-group">
-                    <label>API Key</label>
-                    <input type="password" x-model="config.api_key" :placeholder="config.has_api_key ? '(saved securely in keychain)' : 'Enter API key'">
-                </div>
-                <button class="btn" @click="saveAPIConfig()">Save API Configuration</button>
-            </div>
-
-            <div class="tab-content" x-show="activeTab === 'advanced'">
-                <div class="form-group">
-                    <label>SSH Key Path</label>
-                    <input type="text" x-model="config.key_path">
-                </div>
-                <div class="form-group">
-                    <label>Key Type</label>
-                    <input type="text" x-model="config.key_type">
-                </div>
-                <button class="btn" @click="saveAdvanced()">Update Settings</button>
-                <button class="btn btn-secondary" @click="clearConfig()">Clear All Configurations</button>
-            </div>
-        </div>
-
-        <!-- Onboarding Wizard -->
-        <div x-show="onboarding" x-cloak>
-            <div class="step-indicator">
-                <div class="step-dot" :class="step === 1 ? 'active' : ''"></div>
-                <div class="step-dot" :class="step === 2 ? 'active' : ''"></div>
-                <div class="step-dot" :class="step === 3 ? 'active' : ''"></div>
-            </div>
-
-            <div x-show="step === 1" class="tab-content">
-                <p style="margin-bottom: 2rem; color: var(--text-muted);">Welcome to Tyr! First, enter your Fenrir server URL.</p>
-                <div class="form-group">
-                    <label>Fenrir Server URL</label>
-                    <input type="text" x-model="config.server_url" placeholder="http://fenrir.homelab:8080">
-                </div>
-                <button class="btn" @click="step = 2">Continue</button>
-            </div>
-
-            <div x-show="step === 2" class="tab-content">
-                <p style="margin-bottom: 2rem; color: var(--text-muted);">Sign in to your account.</p>
-                <div class="form-group">
-                    <label>Username</label>
-                    <input type="text" x-model="login.username">
-                </div>
-                <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" x-model="login.password">
-                </div>
-                <div x-show="login.mfaRequired" x-cloak>
                     <div class="form-group">
-                        <label>MFA Code</label>
-                        <input type="text" x-model="login.mfaCode">
+                        <label>Username</label>
+                        <input type="text" x-model="login.username" placeholder="alice">
                     </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" x-model="login.password" placeholder="••••••••">
+                    </div>
+                    <div x-show="login.mfaRequired" x-cloak>
+                        <div class="form-group">
+                            <label>MFA Code</label>
+                            <input type="text" x-model="login.mfaCode" placeholder="123456">
+                        </div>
+                    </div>
+                    <button class="btn" @click="doLogin()">Authenticate</button>
                 </div>
-                <button class="btn" @click="doLogin()">Sign In</button>
-                <button class="btn btn-secondary" @click="step = 1" style="background: none; border: 1px solid var(--md-sys-color-outline);">Back</button>
+
+                <div class="tab-content" x-show="activeTab === 'apikey'">
+                    <div class="form-group">
+                        <label>Fenrir Server URL</label>
+                        <input type="text" x-model="config.server_url">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" x-model="config.api_key" :placeholder="config.has_api_key ? '(saved securely in keychain)' : 'Enter API key'">
+                    </div>
+                    <button class="btn" @click="saveAPIConfig()">Save API Configuration</button>
+                </div>
+
+                <div class="tab-content" x-show="activeTab === 'advanced'">
+                    <div class="form-group">
+                        <label>SSH Key Path</label>
+                        <input type="text" x-model="config.key_path" placeholder="e.g. ~/.ssh/id_ed25519">
+                    </div>
+                    <div class="form-group">
+                        <label>Key Type</label>
+                        <input type="text" x-model="config.key_type" placeholder="e.g. ed25519">
+                    </div>
+                    <button class="btn" @click="saveAdvanced()">Update Settings</button>
+                    <button class="btn btn-secondary" @click="clearConfig()">Clear All Configurations</button>
+                </div>
             </div>
 
-            <div x-show="step === 3" class="tab-content">
-                <p style="margin-bottom: 2rem; color: var(--text-muted);">Everything is set up! Your credentials have been stored securely in your system's keychain.</p>
-                <div class="form-group">
-                    <label>SSH Key Location</label>
-                    <input type="text" x-model="config.key_path" readonly style="opacity: 0.7;">
+            <!-- Onboarding Wizard -->
+            <div x-show="onboarding" x-cloak>
+                <div class="step-indicator">
+                    <div class="step-dot" :class="step === 1 ? 'active' : ''"></div>
+                    <div class="step-dot" :class="step === 2 ? 'active' : ''"></div>
+                    <div class="step-dot" :class="step === 3 ? 'active' : ''"></div>
                 </div>
-                <button class="btn" @click="finishOnboarding()">Go to Dashboard</button>
+
+                <div x-show="step === 1" class="tab-content">
+                    <p style="margin-bottom: 2rem; color: var(--text-muted);">Welcome to Tyr! First, enter your Fenrir server URL.</p>
+                    <div class="form-group">
+                        <label>Fenrir Server URL</label>
+                        <input type="text" x-model="config.server_url" placeholder="http://fenrir.homelab:8080">
+                    </div>
+                    <button class="btn" @click="step = 2">Continue</button>
+                </div>
+
+                <div x-show="step === 2" class="tab-content">
+                    <p style="margin-bottom: 2rem; color: var(--text-muted);">Sign in to your account.</p>
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" x-model="login.username">
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" x-model="login.password">
+                    </div>
+                    <div x-show="login.mfaRequired" x-cloak>
+                        <div class="form-group">
+                            <label>MFA Code</label>
+                            <input type="text" x-model="login.mfaCode">
+                        </div>
+                    </div>
+                    <button class="btn" @click="doLogin()">Sign In</button>
+                    <button class="btn btn-secondary" @click="step = 1" style="background: none; border: 1px solid var(--md-sys-color-outline);">Back</button>
+                </div>
+
+                <div x-show="step === 3" class="tab-content">
+                    <p style="margin-bottom: 2rem; color: var(--text-muted);">Everything is set up! Your credentials have been stored securely in your system's keychain.</p>
+                    <div class="form-group">
+                        <label>SSH Key Location</label>
+                        <input type="text" x-model="config.key_path" readonly style="opacity: 0.7;">
+                    </div>
+                    <button class="btn" @click="finishOnboarding()">Go to Dashboard</button>
+                </div>
             </div>
         </div>
     </div>
-
     <script>
         function settings() {
             return {
