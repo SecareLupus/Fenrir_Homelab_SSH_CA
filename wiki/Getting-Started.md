@@ -4,16 +4,11 @@ Follow this guide to set up your first "Tier 1" (Online) Fenrir server and sign 
 
 ## 1. Installation
 
-### Using Docker (Recommended)
+### Docker (Recommended)
 
-```bash
-docker run -d \
-  --name fenrir \
-  -p 8080:8080 \
-  -v fenrir-data:/data \
-  -e FENRIR_CA_PASSPHRASE="your-secure-passphrase" \
-  ghcr.io/secarelupus/fenrir:latest
-```
+Fenrir is best deployed using Docker to ensure consistent environment and dependency management.
+
+- **[Docker Compose Deployment Guide](Docker-Compose-Deployment)**: Detailed instructions on using our provided compose files for various security tiers, and a full environment variable reference.
 
 ### Native Binary
 

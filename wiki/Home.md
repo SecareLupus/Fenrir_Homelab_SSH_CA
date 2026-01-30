@@ -23,6 +23,7 @@ Fenrir aims to bring enterprise-grade security (like BeyondCorp/Zero Trust) to t
 
 - **[Getting Started](Getting-Started)**: Install Fenrir and issue your first certificate.
 - **[Architecture](Architecture)**: Learn how Fenrir protects your keys and identity.
+- **[Docker Compose Deployment](Docker-Compose-Deployment)**: Guide for tiered deployments and configuration.
 - **[Tyr GUI (Native App)](<Tyr-GUI-(Native-App)>)**: Explore the new native client features.
 - **[Security & Hardening](Security-&-Hardening)**: Setup PAM, CA Rotation, and HSM support.
 - **[CLI Tool Reference](CLI-Tool-Reference)**: Detailed usage for Fenrir, Tyr, and Gleipnir.
