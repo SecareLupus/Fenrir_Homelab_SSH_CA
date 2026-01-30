@@ -2,7 +2,14 @@
 fenrir
 tyr
 gleipnir
+ssh-ca
+ssh-ca-client
+ssh-ca-server
 /tyr-gui
+tyr-gui-multi
+tyr-gui-test
+tyr-gui-test-persistent
+pam-fenrir
 bin/
 build/
 !build/windows/*.wxs
