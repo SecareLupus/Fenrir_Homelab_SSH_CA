@@ -205,10 +205,10 @@ jobs:
           go build -ldflags="-s -w" -o dist/tyr-windows-amd64.exe ./cmd/tyr
 
       - name: Build MSI Installer
+        shell: cmd
         run: |
-          # WiX is pre-installed on windows-latest
-          "%wix%bin\candle.exe" build/windows/installer.wxs -out dist/installer.wixobj
-          "%wix%bin\light.exe" dist/installer.wixobj -out dist/tyr-setup.msi -ext WixUIExtension
+          "%WIX%bin\candle.exe" build\windows\installer.wxs -out dist\installer.wixobj
+          "%WIX%bin\light.exe" dist\installer.wixobj -out dist\tyr-setup.msi -ext WixUIExtension
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
