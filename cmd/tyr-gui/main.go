@@ -470,8 +470,15 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	id, _ := globalConfig.GetIdentity()
 	expiryText := "No certificate"
+	isExpired := false
 	if id.HasCert {
-		expiryText = fmt.Sprintf("%v", time.Until(id.CertExpiry).Round(time.Minute))
+		until := time.Until(id.CertExpiry)
+		if until <= 0 {
+			expiryText = "Expired"
+			isExpired = true
+		} else {
+			expiryText = fmt.Sprintf("%v", until.Round(time.Second))
+		}
 	}
 
 	// Load recent hosts
@@ -484,6 +491,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		"CAOnline":    id.CAOnline,
 		"Fingerprint": id.Fingerprint,
 		"ExpiryText":  expiryText,
+		"IsExpired":   isExpired,
 		"RecentHosts": pc.RecentHosts,
 	})
 }
