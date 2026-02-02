@@ -14,11 +14,11 @@
 - [x] **Value Proposition Branding**: Clear messaging for both "Homelab Simple" and "Small Business Powerful".
 - [x] **Interactive Diagram**: Web-optimized architecture and trust flow visualization.
 
-## Phase 24: Mobile Ecosystem (Flutter)
+## Phase 24: Mobile Ecosystem (Flutter) [MOVED]
 
-- [ ] **Fleet Health Dashboard**: Real-time status and heartbeats in the mobile app.
-- [ ] **Remote Approvals**: Push notifications and UI for approving cert requests on the go.
-- [ ] **Mobile Audit Log**: Access to identity-based audit tails on mobile.
+- [x] **Fleet Health Dashboard**: Real-time status and heartbeats in the mobile app. (Moved to separate repo)
+- [x] **Remote Approvals**: Push notifications and UI for approving cert requests on the go. (Moved to separate repo)
+- [x] **Mobile Audit Log**: Access to identity-based audit tails on mobile. (Moved to separate repo)
 
 ## Phase 25: Documentation & API Standardization
 

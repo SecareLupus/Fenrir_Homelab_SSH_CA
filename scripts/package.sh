@@ -69,7 +69,7 @@ fi
 cp "scripts/completion.sh" "$DEB_ROOT/etc/bash_completion.d/tyr"
 
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
-Package: homelab-ssh-ca
+Package: fenrir-tyr
 Version: $VERSION
 Section: utils
 Priority: optional
@@ -79,6 +79,6 @@ Description: Homelab SSH CA Client and GUI
  A user-friendly tool for managing SSH certificates and launching authenticated sessions.
 EOF
 
-dpkg-deb --root-owner-group --build "$DEB_ROOT" "$BIN_DIR/homelab-ssh-ca_$VERSION_amd64.deb"
+dpkg-deb --root-owner-group --build "$DEB_ROOT" "$BIN_DIR/fenrir-tyr_${VERSION}_amd64.deb"
 
 echo "Done! Artifacts are in $BIN_DIR"
