@@ -111,6 +111,17 @@ type oidcStateData struct {
 	Expires int64  `json:"expires"`
 }
 
+type securityPosture struct {
+	CAKeyAgeDays      int
+	CAKeyRotationDays int
+	TotalHosts        int
+	OnlineHosts       int
+	MFAEnabledUsers   int
+	TotalUsers        int
+	RecentAnomalies   int
+	AgentVersions     map[string]int
+}
+
 // NewServer initializes a new web server instance with the provided configuration,
 // database, and CA service. It loads templates and sets up routes.
 func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
@@ -163,7 +174,9 @@ func NewServer(cfg *config.Config, db *db.DB, ca *ca.Service) *Server {
 
 func (s *Server) loadTemplates() {
 	pattern := filepath.Join("web", "templates", "*.html")
-	tmpl, err := template.ParseGlob(pattern)
+	tmpl, err := template.New("").Funcs(template.FuncMap{
+		"sub": func(a, b int) int { return a - b },
+	}).ParseGlob(pattern)
 	if err != nil {
 		log.Fatalf("failed to parse templates: %v", err)
 	}
@@ -353,6 +366,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/v1/host/audit", s.handleAPIHostAudit)
 	s.mux.HandleFunc("/api/v1/search", s.handleAPISearch)
 	s.mux.HandleFunc("/admin/search", s.handleAdminSearch)
+	s.mux.HandleFunc("/admin/security", s.handleAdminSecurity)
+	s.mux.HandleFunc("/admin/security/rotate", s.handleAdminSecurityRotate)
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	s.mux.HandleFunc("/docs", s.handleDocs)
@@ -2471,6 +2486,102 @@ type rateLimiter struct {
 
 func newRateLimiter() *rateLimiter {
 	return &rateLimiter{attempts: make(map[string][]time.Time)}
+}
+
+func (s *Server) handleAdminSecurity(w http.ResponseWriter, r *http.Request) {
+	username := s.authenticate(r)
+	if !s.isAdmin(username) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+
+	posture := s.getSecurityPostureData()
+
+	data := map[string]any{
+		"User":    username,
+		"IsAdmin": true,
+		"Posture": posture,
+	}
+	s.attachCSRFToken(r, data)
+	s.renderPage(w, "admin_security.html", data)
+}
+
+func (s *Server) handleAdminSecurityRotate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/admin/security", http.StatusSeeOther)
+		return
+	}
+
+	admin := s.authenticate(r)
+	if !s.isAdmin(admin) {
+		http.Error(w, "Forbidden", 403)
+		return
+	}
+	if !s.requireCSRF(w, r) {
+		return
+	}
+
+	log.Printf("Manual CA Key Rotation triggered by %s", admin)
+	if err := s.ca.RotateCAKeys(s.cfg); err != nil {
+		log.Printf("ERROR: CA rotation failed: %v", err)
+		http.Error(w, "Rotation failed: "+err.Error(), 500)
+		return
+	}
+
+	uid, _ := s.db.GetUserID(admin)
+	s.db.LogEvent(&uid, "ca_rotation", "Manual intermediate rotation triggered via Dashboard")
+	s.db.CreateSecret("ca_rotation_meta", "rotated_manual", 0)
+
+	http.Redirect(w, r, "/admin/security", http.StatusSeeOther)
+}
+
+func (s *Server) getSecurityPostureData() securityPosture {
+	posture := securityPosture{
+		CAKeyRotationDays: 180,
+		AgentVersions:     make(map[string]int),
+	}
+
+	// 1. CA Age
+	meta, err := s.db.GetActiveSecrets("ca_rotation_meta")
+	if err == nil && len(meta) > 0 {
+		posture.CAKeyAgeDays = int(time.Since(meta[0].CreatedAt).Hours() / 24)
+	}
+
+	// 2. Hosts
+	hosts, _ := s.db.ListHosts()
+	posture.TotalHosts = len(hosts)
+	s.hostMetricsMu.RLock()
+	for _, h := range hosts {
+		if m, ok := s.hostMetrics[h.Hostname]; ok {
+			if time.Since(m.LastReported) < 10*time.Minute {
+				posture.OnlineHosts++
+			}
+		}
+	}
+	s.hostMetricsMu.RUnlock()
+
+	// 3. User MFA
+	users, _ := s.db.ListUsers()
+	posture.TotalUsers = len(users)
+	for _, u := range users {
+		mfa, _ := s.db.GetUserMFASecret(u.Username)
+		if mfa != "" {
+			posture.MFAEnabledUsers++
+		}
+	}
+
+	// 4. Anomalies
+	logs, _ := s.db.ListAuditLogs(100)
+	for _, l := range logs {
+		if l.Event == "anomaly_detected" {
+			t, _ := time.Parse("2006-01-02 15:04:05", l.CreatedAt)
+			if time.Since(t) < 7*24*time.Hour {
+				posture.RecentAnomalies++
+			}
+		}
+	}
+
+	return posture
 }
 
 func (rl *rateLimiter) allow(key string) bool {

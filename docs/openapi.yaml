@@ -166,6 +166,118 @@ paths:
         "200":
           description: HTML Page
 
+  /api/v1/search:
+    get:
+      summary: Global Search
+      description: Unified search across Hosts, Users, and Audit Logs.
+      security:
+        - CookieAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          required: true
+          description: Search query string
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type: {type: string}
+                        name: {type: string}
+                        url: {type: string}
+                        info: {type: string}
+
+  /api/v1/host/report:
+    post:
+      summary: Report Host Metrics
+      security:
+        - HostApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HostMetrics'
+      responses:
+        "204":
+          description: Metrics reported successfully
+
+  /api/v1/host/audit:
+    post:
+      summary: Log Host Audit Event
+      security:
+        - HostApiKeyAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event: {type: string}
+                metadata: {type: string}
+      responses:
+        "204":
+          description: Event logged successfully
+
+  /api/v1/ca/pam/binary:
+    get:
+      summary: Download PAM Module Binary
+      parameters:
+        - in: query
+          name: arch
+          schema:
+            type: string
+            enum: [x86_64, arm64]
+          description: Target architecture
+      responses:
+        "200":
+          description: PAM binary file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /metrics:
+    get:
+      summary: Prometheus Metrics
+      responses:
+        "200":
+          description: Metrics in Prometheus text format
+          content:
+            text/plain:
+              schema: {type: string}
+
+  /admin/security:
+    get:
+      summary: Security Posture Dashboard
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: HTML Page showcasing security health
+
+components:
+  schemas:
+    HostMetrics:
+      type: object
+      properties:
+        heartbeats: {type: integer}
+        load_1: {type: number}
+        load_5: {type: number}
+        load_15: {type: number}
+        active_ssh: {type: integer}
+
 components:
   securitySchemes:
     CookieAuth:

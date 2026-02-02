@@ -22,9 +22,9 @@
 
 ## Phase 25: Documentation & API Standardization
 
-- [ ] **OpenAPI Specification**: Fully documented public REST API for scripts and third-party integrations.
-- [ ] **Automated CA Rotation**: Streamlined workflow for rotating Intermediate keys via the Root CA.
-- [ ] **Security Posture Dashboard**: "Health Check" page for outdated agents or weak policy configurations.
+- [x] **OpenAPI Specification**: Fully documented public REST API for scripts and third-party integrations.
+- [x] **Automated CA Rotation**: Streamlined workflow for rotating Intermediate keys via the Root CA.
+- [x] **Security Posture Dashboard**: "Health Check" page for outdated agents or weak policy configurations.
 
 ## Phase 26: Open-Source IaC (OpenTofu)
 

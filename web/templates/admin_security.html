@@ -1,0 +1,79 @@
+{{define "content"}}
+<div class="card" style="max-width: 900px; margin: 0 auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.5rem;">
+        <div>
+            <h2 style="margin: 0; font-size: 1.5rem; letter-spacing: -0.02em;">Security Posture</h2>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">Health check and configuration audit for Fenrir infrastructure.</p>
+        </div>
+        <div style="display: flex; gap: 1rem;">
+            <form action="/admin/security/rotate" method="POST" onsubmit="return confirm('WARNING: Rotating CA keys requires all hosts to update their trust anchors. Proceed?');">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <button type="submit" class="btn-secondary" style="background: rgba(239, 68, 68, 0.1); border-color: var(--error); color: var(--error); padding: 0.5rem 1rem; margin: 0;">Force CA Rotation</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 3rem;">
+        <!-- CA Health -->
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.5rem; border-radius: 12px; text-align: center;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">CA Key Age</div>
+            <div style="font-size: 2rem; font-weight: 700; color: {{if lt .Posture.CAKeyAgeDays 150}}var(--success){{else if lt .Posture.CAKeyAgeDays 180}}#fbbf24{{else}}var(--error){{end}};">
+                {{.Posture.CAKeyAgeDays}} <span style="font-size: 0.9rem; font-weight: 400; color: var(--text-muted);">/ {{.Posture.CAKeyRotationDays}} Days</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Software-based rotation</div>
+        </div>
+
+        <!-- MFA Adoption -->
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.5rem; border-radius: 12px; text-align: center;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">MFA Adoption</div>
+            <div style="font-size: 2rem; font-weight: 700; color: {{if eq .Posture.MFAEnabledUsers .Posture.TotalUsers}}var(--success){{else}}#fbbf24{{end}};">
+                {{.Posture.MFAEnabledUsers}} <span style="font-size: 0.9rem; font-weight: 400; color: var(--text-muted);">/ {{.Posture.TotalUsers}} Users</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Multi-factor authentication</div>
+        </div>
+
+        <!-- Online Fleet -->
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.5rem; border-radius: 12px; text-align: center;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Fleet Health</div>
+            <div style="font-size: 2rem; font-weight: 700; color: {{if eq .Posture.OnlineHosts .Posture.TotalHosts}}var(--success){{else}}#fbbf24{{end}};">
+                {{.Posture.OnlineHosts}} <span style="font-size: 0.9rem; font-weight: 400; color: var(--text-muted);">/ {{.Posture.TotalHosts}} Online</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Active Gleipnir heartbeats</div>
+        </div>
+
+        <!-- Recent Anomalies -->
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.5rem; border-radius: 12px; text-align: center;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Recent Security Events</div>
+            <div style="font-size: 2rem; font-weight: 700; color: {{if eq .Posture.RecentAnomalies 0}}var(--success){{else}}var(--error){{end}};">
+                {{.Posture.RecentAnomalies}}
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Anomalies (Last 7 days)</div>
+        </div>
+    </div>
+
+    <!-- Detailed Analysis -->
+    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 2rem; border-radius: 12px;">
+        <h3 style="margin-top: 0; font-size: 1.1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem;">
+            🛡️ Policy Recommendations
+        </h3>
+        <ul style="margin: 0; padding-left: 1.25rem; color: var(--text-muted); font-size: 0.9rem; line-height: 1.8;">
+            {{if lt .Posture.MFAEnabledUsers .Posture.TotalUsers}}
+            <li style="margin-bottom: 0.5rem;"><b style="color: #fbbf24;">Weak MFA Coverage:</b> {{sub .Posture.TotalUsers .Posture.MFAEnabledUsers}} users still authenticate using passwords only. Encourage MFA enrollment via <code>/mfa/setup</code>.</li>
+            {{end}}
+            {{if gt .Posture.RecentAnomalies 0}}
+            <li style="margin-bottom: 0.5rem;"><b style="color: var(--error);">Active Threats detected:</b> Check the <a href="/admin/audit" style="color: var(--primary);">Audit Logs</a> for "anomaly_detected" events.</li>
+            {{end}}
+            {{if lt .Posture.OnlineHosts .Posture.TotalHosts}}
+            <li style="margin-bottom: 0.5rem;"><b style="color: #fbbf24;">Missing Heartbeats:</b> {{sub .Posture.TotalHosts .Posture.OnlineHosts}} hosts haven't checked in recently. Verify Gleipnir service status on these machines.</li>
+            {{end}}
+            {{if ge .Posture.CAKeyAgeDays 150}}
+            <li style="margin-bottom: 0.5rem;"><b style="color: #fbbf24;">CA Key Rotation Imminent:</b> The intermediate key is approaching its 180-day rotation window. Automated rotation will trigger soon.</li>
+            {{end}}
+            {{if and (eq .Posture.RecentAnomalies 0) (eq .Posture.MFAEnabledUsers .Posture.TotalUsers) (eq .Posture.OnlineHosts .Posture.TotalHosts)}}
+            <li style="color: var(--success);">Security posture is excellent. All users have MFA enabled, all hosts are reporting heartbeats, and no anomalies have been detected.</li>
+            {{end}}
+        </ul>
+    </div>
+</div>
+{{end}}
